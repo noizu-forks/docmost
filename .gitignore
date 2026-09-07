@@ -1,10 +1,5 @@
-/_build/
-/deps/
-/cover/
-/doc/
+/_build
+/deps
 /.elixir_ls/
-/.claude/worktrees/
-erl_crash.dump
-*.ez
-*.beam
-.DS_Store
+/doc/
+/cover/
