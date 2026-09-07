@@ -1,5 +1,11 @@
+import { NotFoundException } from '@nestjs/common';
 import { createMockAbilityFactory } from '../test-helpers/casl.mock';
 import { PageContentController } from './page-content.controller';
+
+jest.mock('../../collaboration/collaboration.util', () => ({
+  jsonToHtml: jest.fn().mockReturnValue('<p>html</p>'),
+  jsonToMarkdown: jest.fn().mockReturnValue('# markdown'),
+}));
 
 describe('PageContentController (v1)', () => {
   const user = { id: 'user_1' } as any;
@@ -63,5 +69,55 @@ describe('PageContentController (v1)', () => {
       { pageId: 'page_1', content: 'more', operation: 'append', format: 'markdown' },
       user,
     );
+  });
+
+  it('404s on an unknown page', async () => {
+    const { controller } = createController({
+      pageRepo: { findById: jest.fn().mockResolvedValue(null) },
+    });
+
+    await expect(
+      controller.putContent('page_x', { content: '# hi' }, user),
+    ).rejects.toThrow('Page not found');
+  });
+
+  it('converts content to the requested format on write', async () => {
+    const { controller } = createController();
+
+    const md = await controller.putContent(
+      'page_1',
+      { content: '# hello', format: 'markdown' },
+      user,
+    );
+    const html = await controller.putContent(
+      'page_1',
+      { content: '# hello', format: 'html' },
+      user,
+    );
+    const json = await controller.putContent(
+      'page_1',
+      { content: '# hello', format: 'json' },
+      user,
+    );
+
+    expect(md.content).toBe('# markdown');
+    expect(html.content).toBe('<p>html</p>');
+    expect(json.content).toEqual({ type: 'doc', v: 2 });
+  });
+
+  it('keeps raw content when the updated page has none', async () => {
+    const { controller } = createController({
+      pageService: {
+        update: jest.fn().mockResolvedValue({ ...page, content: null }),
+      },
+    });
+
+    const result = await controller.putContent(
+      'page_1',
+      { content: '# hello', format: 'markdown' },
+      user,
+    );
+
+    expect(result.content).toBeNull();
   });
 });

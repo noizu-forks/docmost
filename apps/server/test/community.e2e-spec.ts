@@ -134,6 +134,8 @@ const TEST_ENV_READY = !!(
       .get(`/api/v1/pages/${pageId}?format=markdown&include=breadcrumbs`)
       .set(auth)
       .expect(200);
+    // content passed at create time must be persisted (markdown default)
+    expect(got.body.content).toContain('hello');
     expect(got.body.permissions).toMatchObject({ canEdit: expect.any(Boolean) });
     expect(Array.isArray(got.body.breadcrumbs)).toBe(true);
 

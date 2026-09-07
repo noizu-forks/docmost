@@ -6,8 +6,8 @@ describe('SearchController (v1)', () => {
   const user = { id: 'user_1' } as any;
   const workspace = { id: 'ws_1' } as any;
 
-  function createController(overrides: { abilities?: any } = {}) {
-    const searchService = {
+  function createController(overrides: { abilities?: any; searchService?: any } = {}) {
+    const searchService = overrides.searchService ?? {
       searchPage: jest.fn().mockResolvedValue({
         items: [
           {
@@ -54,12 +54,40 @@ describe('SearchController (v1)', () => {
   });
 
   it('forbids searching a space without read access', async () => {
-    const { controller } = createController({
+    const { controller, searchService } = createController({
       abilities: createMockAbilityFactory([]),
     });
 
     await expect(
       controller.search({ q: 'hello', spaceId: 'space_1' }, user, workspace),
     ).rejects.toThrow(ForbiddenException);
+    expect(searchService.searchPage).not.toHaveBeenCalled();
+  });
+
+  it('falls back to the flat spaceId when the result has no space row', async () => {
+    const { controller } = createController({
+      searchService: {
+        searchPage: jest.fn().mockResolvedValue({
+          items: [
+            {
+              id: 'page_2',
+              title: 'Flat',
+              highlight: null,
+              spaceId: 'space_9',
+            },
+          ],
+        }),
+      } as any,
+    });
+
+    const result = await controller.search(
+      { q: 'flat', spaceId: 'space_1', limit: 5 },
+      user,
+      workspace,
+    );
+
+    expect(result.data).toEqual([
+      { pageId: 'page_2', title: 'Flat', spaceId: 'space_9', snippet: null },
+    ]);
   });
 });

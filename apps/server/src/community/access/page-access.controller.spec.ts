@@ -1,4 +1,4 @@
-import { NotFoundException } from '@nestjs/common';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { createMockAbilityFactory } from '../test-helpers/casl.mock';
 import { PageAccessController } from './page-access.controller';
 
@@ -227,5 +227,39 @@ describe('PageAccessController (v1)', () => {
     await expect(controller.getAccess('page_x', {}, user)).rejects.toThrow(
       NotFoundException,
     );
+  });
+
+  it('400s on an empty pageId', async () => {
+    const { controller } = createController();
+
+    await expect(
+      controller.getAccess(undefined as any, {}, user),
+    ).rejects.toThrow(BadRequestException);
+  });
+
+  it('404s PATCH grant when the page is not restricted', async () => {
+    const { controller, grantsMapper } = createController({
+      pagePermissionRepo: {
+        findPageAccessByPageId: jest.fn().mockResolvedValue(null),
+      },
+    });
+
+    await expect(
+      controller.patchGrant('page_1', 'grant_1', { role: 'reader' } as any, user),
+    ).rejects.toThrow('Page is not restricted');
+    expect(grantsMapper.updateRoleById).not.toHaveBeenCalled();
+  });
+
+  it('DELETE grant is a no-op 204 when the page is not restricted', async () => {
+    const { controller, grantsMapper } = createController({
+      pagePermissionRepo: {
+        findPageAccessByPageId: jest.fn().mockResolvedValue(null),
+      },
+    });
+
+    await expect(
+      controller.deleteGrant('page_1', 'grant_1', user),
+    ).resolves.toBeUndefined();
+    expect(grantsMapper.deleteById).not.toHaveBeenCalled();
   });
 });
