@@ -2,14 +2,15 @@ defmodule DocmostMCP.Tools.Core do
   @moduledoc "Direct Docmost space, page, and sharing tools."
   use Noizu.MCP.Server.Toolkit, category: "Docmost"
 
-  alias DocmostMCP.{Client, Config}
+  alias DocmostMCP.{Auth, Client, Config}
   alias DocmostMCP.VFS.MetaFile
 
   @mcp name: "docmost_spaces_list",
        description: "List Docmost spaces.",
        annotations: [read_only_hint: true],
        input: []
-  def spaces_list(_args, _ctx) do
+  def spaces_list(_args, ctx) do
+    Auth.assume(ctx)
     with {:ok, rows} <- Client.list_spaces(),
          do: {:ok, %{spaces: DocmostMCP.Normalize.list(rows)}}
   end
@@ -18,7 +19,8 @@ defmodule DocmostMCP.Tools.Core do
        description: "List the page hierarchy for a space.",
        annotations: [read_only_hint: true],
        input: [space_id: [type: :string, required: true]]
-  def pages_list(%{space_id: id}, _ctx) do
+  def pages_list(%{space_id: id}, ctx) do
+    Auth.assume(ctx)
     with {:ok, rows} <- Client.list_pages(id),
          do: {:ok, %{pages: DocmostMCP.Normalize.list(rows)}}
   end
@@ -27,7 +29,10 @@ defmodule DocmostMCP.Tools.Core do
        description: "Get a page as Markdown.",
        annotations: [read_only_hint: true],
        input: [page_id: [type: :string, required: true]]
-  def page_get(%{page_id: id}, _ctx), do: Client.get_page(id)
+  def page_get(%{page_id: id}, ctx) do
+    Auth.assume(ctx)
+    Client.get_page(id)
+  end
 
   @mcp name: "docmost_page_create",
        description: "Create a Markdown page. Requires DOCMOST_MCP_WRITES=1.",
@@ -37,7 +42,8 @@ defmodule DocmostMCP.Tools.Core do
          content: [type: :string, default: ""],
          parent_page_id: [type: :string]
        ]
-  def page_create(args, _ctx) do
+  def page_create(args, ctx) do
+    Auth.assume(ctx)
     write(fn ->
       Client.create_page(%{
         spaceId: args.space_id,
@@ -56,9 +62,10 @@ defmodule DocmostMCP.Tools.Core do
          content: [type: :string, required: true],
          title: [type: :string]
        ]
-  def page_update(args, _ctx),
-    do:
-      write(fn ->
+  def page_update(args, ctx) do
+    Auth.assume(ctx)
+
+    write(fn ->
         Client.update_page(args.page_id, %{
           content: args.content,
           title: args.title,
@@ -66,6 +73,7 @@ defmodule DocmostMCP.Tools.Core do
           operation: "replace"
         })
       end)
+  end
 
   @mcp name: "docmost_page_delete",
        description: "Soft-delete a page. Requires DOCMOST_MCP_WRITES=1.",
@@ -74,8 +82,10 @@ defmodule DocmostMCP.Tools.Core do
          page_id: [type: :string, required: true],
          confirm: [type: :boolean, default: false]
        ]
-  def page_delete(%{confirm: true, page_id: id}, _ctx),
-    do: write(fn -> Client.delete_page(id) end)
+  def page_delete(%{confirm: true, page_id: id}, ctx) do
+    Auth.assume(ctx)
+    write(fn -> Client.delete_page(id) end)
+  end
 
   def page_delete(_, _ctx), do: {:error, "confirm=true is required"}
 
@@ -88,7 +98,8 @@ defmodule DocmostMCP.Tools.Core do
          include_sub_pages: [type: :boolean, default: false],
          search_indexing: [type: :boolean, default: false]
        ]
-  def page_share(args, _ctx) do
+  def page_share(args, ctx) do
+    Auth.assume(ctx)
     write(fn ->
       with {:ok, page} <- Client.get_page(args.page_id),
            yaml =

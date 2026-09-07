@@ -108,7 +108,17 @@ defmodule DocmostMCP.Auth do
     }
   end
 
-  @doc "Record the bearer for the current handler process (nil clears)."
+  @doc """
+Handler-process hop: record the bearer from a request ctx into the current
+process. The session process resolves the principal, but handlers run in a
+supervised Task with a fresh process dictionary — assume there.
+"""
+def assume(%{auth: %Principal{claims: claims}}) when is_map(claims),
+  do: put_bearer(claims["token"])
+
+def assume(_), do: :ok
+
+@doc "Record the bearer for the current handler process (nil clears)."
   def put_bearer(token) when is_binary(token) and token != "",
     do: Process.put(@bearer_key, token)
 
