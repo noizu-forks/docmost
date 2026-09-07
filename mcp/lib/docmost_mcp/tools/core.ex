@@ -49,7 +49,8 @@ defmodule DocmostMCP.Tools.Core do
         spaceId: args.space_id,
         title: args.title,
         content: args.content,
-        parentPageId: args.parent_page_id,
+        # optional args arrive only when the caller passes them
+        parentPageId: Map.get(args, :parent_page_id),
         format: "markdown"
       })
     end)
@@ -68,7 +69,7 @@ defmodule DocmostMCP.Tools.Core do
     write(fn ->
         Client.update_page(args.page_id, %{
           content: args.content,
-          title: args.title,
+          title: Map.get(args, :title),
           format: "markdown",
           operation: "replace"
         })
