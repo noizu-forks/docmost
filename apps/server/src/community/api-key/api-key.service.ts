@@ -2,12 +2,19 @@ import {
   BadRequestException,
   Injectable,
   Logger,
-  NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
 import { InjectKysely } from 'nestjs-kysely';
 import { KyselyDB } from '@docmost/db/types/kysely.types';
-import { ApiKey, User, Workspace } from '@docmost/db/types/entity.types';
+import {
+  ApiKey,
+  InsertableApiKey,
+  User,
+  Workspace,
+} from '@docmost/db/types/entity.types';
+import { executeWithCursorPagination } from '@docmost/db/pagination/cursor-pagination';
+import { CursorPaginationResult } from '@docmost/db/pagination/cursor-pagination';
+import { PaginationOptions } from '@docmost/db/pagination/pagination-options';
 import { UserRepo } from '@docmost/db/repos/user/user.repo';
 import { WorkspaceRepo } from '@docmost/db/repos/workspace/workspace.repo';
 import { isUserDisabled } from '../../common/helpers';
@@ -37,7 +44,7 @@ export class ApiKeyService {
     createApiKeyDto: CreateApiKeyDto,
     user: User,
     workspaceId: string,
-  ): Promise<{ id: string; name: string; token: string }> {
+  ): Promise<InsertableApiKey & { token: string }> {
     const apiKey = await this.db
       .insertInto('apiKeys')
       .values({
@@ -61,35 +68,41 @@ export class ApiKeyService {
     });
 
     // The raw token is only ever returned on mint; it is not persisted.
-    return { id: apiKey.id, name: apiKey.name, token };
+    return {
+      id: apiKey.id,
+      name: apiKey.name,
+      createdAt: apiKey.createdAt,
+      token,
+    } as any;
   }
 
-  async listApiKeys(workspaceId: string): Promise<ApiKey[]> {
-    return this.db
+  async listApiKeys(
+    workspaceId: string,
+    pagination: PaginationOptions,
+  ): Promise<CursorPaginationResult<ApiKey>> {
+    const query = this.db
       .selectFrom('apiKeys')
       .selectAll()
       .where('workspaceId', '=', workspaceId)
-      .where('deletedAt', 'is', null)
-      .orderBy('createdAt desc')
-      .execute();
+      .where('deletedAt', 'is', null);
+
+    // api_keys.id is gen_uuid_v7 (time-ordered), so id-desc = newest-first.
+    return executeWithCursorPagination(query, {
+      perPage: pagination.limit,
+      cursor: pagination.cursor,
+      fields: [{ expression: 'id', direction: 'desc' }],
+      parseCursor: (cursor) => ({ id: cursor.id }),
+    } as any);
   }
 
+  /** Idempotent: deleting an unknown or already-revoked key is a no-op (204). */
   async revokeApiKey(id: string, workspaceId: string): Promise<void> {
-    const apiKey = await this.db
-      .selectFrom('apiKeys')
-      .selectAll()
-      .where('id', '=', id)
-      .where('workspaceId', '=', workspaceId)
-      .executeTakeFirst();
-
-    if (!apiKey) {
-      throw new NotFoundException('API key not found');
-    }
-
     await this.db
       .updateTable('apiKeys')
       .set({ deletedAt: new Date(), updatedAt: new Date() })
       .where('id', '=', id)
+      .where('workspaceId', '=', workspaceId)
+      .where('deletedAt', 'is', null)
       .execute();
   }
 

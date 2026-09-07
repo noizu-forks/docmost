@@ -5,11 +5,13 @@ import {
   ForbiddenException,
   Get,
   HttpCode,
-  HttpStatus,
   Param,
   Post,
+  Query,
+  UseFilters,
   UseGuards,
 } from '@nestjs/common';
+import { HttpStatus } from '@nestjs/common';
 import { AuthUser } from '../../common/decorators/auth-user.decorator';
 import { AuthWorkspace } from '../../common/decorators/auth-workspace.decorator';
 import { User, Workspace } from '@docmost/db/types/entity.types';
@@ -19,23 +21,26 @@ import {
   WorkspaceCaslAction,
   WorkspaceCaslSubject,
 } from '../../core/casl/interfaces/workspace-ability.type';
+import { V1PaginationDto } from '../dto/v1-pagination.dto';
+import { toDataEnvelope, toPaginationOptions } from '../pagination';
+import { V1ExceptionFilter } from '../http/error-filter';
 import { ApiKeyService } from './api-key.service';
-import { ApiKeyIdDto, CreateApiKeyDto } from './dto/api-key.dto';
+import { CreateApiKeyDto } from './dto/api-key.dto';
 
 /**
- * Community API key management. Keys authenticate with
- * `Authorization: Bearer <token>`; the raw token is returned exactly once
- * on mint and is never persisted or listed again.
+ * v1 API key management (admin only; WorkspaceCaslAction.Manage on API).
+ * Keys authenticate with `Authorization: Bearer <token>`; the raw token is
+ * returned exactly once on mint and is never persisted or listed again.
  */
 @UseGuards(JwtAuthGuard)
-@Controller('keys')
+@UseFilters(V1ExceptionFilter)
+@Controller('v1/keys')
 export class ApiKeyController {
   constructor(
     private readonly apiKeyService: ApiKeyService,
     private readonly workspaceAbility: WorkspaceAbilityFactory,
   ) {}
 
-  @HttpCode(HttpStatus.OK)
   @Post('/')
   async createApiKey(
     @Body() createApiKeyDto: CreateApiKeyDto,
@@ -52,22 +57,41 @@ export class ApiKeyController {
   }
 
   @Get('/')
-  async listApiKeys(@AuthUser() user: User, @AuthWorkspace() workspace: Workspace) {
-    this.assertApiAdmin(user, workspace);
-
-    // Tokens are stateless JWTs and are never stored, so rows carry no secret.
-    return { items: await this.apiKeyService.listApiKeys(workspace.id) };
-  }
-
-  @Delete('/:id')
-  async revokeApiKey(
-    @Param() apiKeyIdDto: ApiKeyIdDto,
+  async listApiKeys(
+    @Query() pagination: V1PaginationDto,
     @AuthUser() user: User,
     @AuthWorkspace() workspace: Workspace,
   ) {
     this.assertApiAdmin(user, workspace);
 
-    await this.apiKeyService.revokeApiKey(apiKeyIdDto.id, workspace.id);
+    const result = await this.apiKeyService.listApiKeys(
+      workspace.id,
+      toPaginationOptions(pagination.limit, pagination.cursor),
+    );
+
+    // Tokens are stateless JWTs and are never stored, so rows carry no secret.
+    return toDataEnvelope({
+      ...result,
+      items: result.items.map((key) => ({
+        id: key.id,
+        name: key.name,
+        expiresAt: key.expiresAt,
+        lastUsedAt: key.lastUsedAt,
+        createdAt: key.createdAt,
+      })),
+    });
+  }
+
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @Delete('/:keyId')
+  async revokeApiKey(
+    @Param('keyId') keyId: string,
+    @AuthUser() user: User,
+    @AuthWorkspace() workspace: Workspace,
+  ) {
+    this.assertApiAdmin(user, workspace);
+
+    await this.apiKeyService.revokeApiKey(keyId, workspace.id);
   }
 
   private assertApiAdmin(user: User, workspace: Workspace) {

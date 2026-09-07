@@ -9,9 +9,10 @@ import { PageRepo } from '@docmost/db/repos/page/page.repo';
 import { SpaceRepo } from '@docmost/db/repos/space/space.repo';
 
 /**
- * Community API e2e: mints an API key (via ApiKeyService, since there is no
- * programmatic login) and then drives the core client contract over HTTP
- * with `Authorization: Bearer <token>`.
+ * v1 e2e: mints an API key (via ApiKeyService, since there is no programmatic
+ * login) and walks the v1 contract table over HTTP with Bearer auth:
+ * keys, spaces, pages (create/get/patch/put-content), share upsert,
+ * page access (restriction + grants), search, idempotent deletes.
  *
  * Requires a reachable database/redis; skipped unless DATABASE_URL and
  * COMMUNITY_E2E_USER_ID / COMMUNITY_E2E_WORKSPACE_ID are provided.
@@ -22,10 +23,10 @@ const TEST_ENV_READY = !!(
   process.env.COMMUNITY_E2E_WORKSPACE_ID
 );
 
-(TEST_ENV_READY ? describe : describe.skip)('Community API (e2e)', () => {
+(TEST_ENV_READY ? describe : describe.skip)('Community API v1 (e2e)', () => {
   let app: INestApplication;
-  let apiKeyId: string;
   let pageId: string;
+  const createdKeyIds: string[] = [];
 
   const userId = process.env.COMMUNITY_E2E_USER_ID;
   const workspaceId = process.env.COMMUNITY_E2E_WORKSPACE_ID;
@@ -38,145 +39,206 @@ const TEST_ENV_READY = !!(
     app = moduleFixture.createNestApplication();
     app.setGlobalPrefix('api');
     await app.init();
-
-    const user = await app.get(UserRepo).findById(userId, workspaceId);
-    expect(user).toBeDefined();
-
-    const minted = await app
-      .get(ApiKeyService)
-      .createApiKey({ name: 'community-e2e' }, user, workspaceId);
-    apiKeyId = minted.id;
   });
 
   afterAll(async () => {
-    if (apiKeyId) {
-      await app
-        .get(ApiKeyService)
-        .revokeApiKey(apiKeyId, workspaceId)
-        .catch(() => undefined);
-    }
     if (pageId) {
       await app.get(PageRepo).deletePage(pageId).catch(() => undefined);
+    }
+    for (const id of createdKeyIds) {
+      await app.get(ApiKeyService).revokeApiKey(id, workspaceId).catch(() => undefined);
     }
     await app?.close();
   });
 
-  const bearerAuth = (token: string) => ({
-    Authorization: `Bearer ${token}`,
-  });
-
-  it('rejects requests without a token', async () => {
-    await request(app.getHttpServer()).post('/api/keys/').expect(403);
-  });
-
-  it('lists API keys', async () => {
-    const minted = await app
-      .get(ApiKeyService)
-      .createApiKey(
-        { name: 'community-e2e-list' },
-        await app.get(UserRepo).findById(userId, workspaceId),
-        workspaceId,
-      );
-
-    const res = await request(app.getHttpServer())
-      .get('/api/keys/')
-      .set(bearerAuth(minted.token))
-      .expect(200);
-
-    expect(res.body.items.some((key: any) => key.id === minted.id)).toBe(true);
-  });
-
-  it('creates a page and drives the page-permission contract', async () => {
+  const mintKey = async (name: string): Promise<string> => {
     const user = await app.get(UserRepo).findById(userId, workspaceId);
     const minted = await app
       .get(ApiKeyService)
-      .createApiKey({ name: 'community-e2e-pages' }, user, workspaceId);
+      .createApiKey({ name }, user, workspaceId);
+    createdKeyIds.push(minted.id);
+    return minted.token;
+  };
 
-    const spaceRepo = app.get(SpaceRepo);
-    const spaces = await spaceRepo.getSpacesInWorkspace(workspaceId, {
-      limit: 1,
+  it('rejects requests without a token (uniform error envelope)', async () => {
+    const res = await request(app.getHttpServer()).get('/api/v1/spaces');
+    expect([401, 403]).toContain(res.status);
+    expect(res.body.error).toMatchObject({
+      code: expect.any(String),
+      statusCode: expect.any(Number),
     });
-    expect(spaces.items.length).toBeGreaterThan(0);
-
-    const pageRepo = app.get(PageRepo);
-    const page = await pageRepo.insertPage({
-      title: 'community-e2e',
-      workspaceId,
-      spaceId: spaces.items[0].id,
-      creatorId: userId,
-      lastUpdatedById: userId,
-    });
-    pageId = page.id;
-
-    await request(app.getHttpServer())
-      .post('/api/pages/permission-info')
-      .set(bearerAuth(minted.token))
-      .send({ pageId })
-      .expect(200)
-      .expect((res) => {
-        expect(res.body.hasDirectRestriction).toBe(false);
-        expect(res.body.canAccess).toBe(true);
-      });
-
-    await request(app.getHttpServer())
-      .post('/api/pages/restrict')
-      .set(bearerAuth(minted.token))
-      .send({ pageId })
-      .expect(200);
-
-    await request(app.getHttpServer())
-      .post('/api/pages/add-permission')
-      .set(bearerAuth(minted.token))
-      .send({ pageId, role: 'writer', userIds: [userId] })
-      .expect(200);
-
-    await request(app.getHttpServer())
-      .post('/api/pages/permissions')
-      .set(bearerAuth(minted.token))
-      .send({ pageId, limit: 20 })
-      .expect(200)
-      .expect((res) => {
-        expect(res.body.permissions).toEqual([
-          { type: 'user', id: userId, role: 'writer' },
-        ]);
-        expect(res.body.meta.nextCursor).toBeNull();
-      });
-
-    await request(app.getHttpServer())
-      .post('/api/pages/update-permission')
-      .set(bearerAuth(minted.token))
-      .send({ pageId, userId, role: 'reader' })
-      .expect(200);
-
-    await request(app.getHttpServer())
-      .post('/api/pages/remove-permission')
-      .set(bearerAuth(minted.token))
-      .send({ pageId, userIds: [userId] })
-      .expect(200);
-
-    await request(app.getHttpServer())
-      .post('/api/pages/remove-restriction')
-      .set(bearerAuth(minted.token))
-      .send({ pageId })
-      .expect(200);
   });
 
-  it('invalidates a revoked key', async () => {
-    const user = await app.get(UserRepo).findById(userId, workspaceId);
-    const minted = await app
-      .get(ApiKeyService)
-      .createApiKey({ name: 'community-e2e-revoke' }, user, workspaceId);
+  it('lists and revokes API keys', async () => {
+    const token = await mintKey('v1-e2e-keys');
 
-    await request(app.getHttpServer())
-      .get('/api/keys/')
-      .set(bearerAuth(minted.token))
+    const list = await request(app.getHttpServer())
+      .get('/api/v1/keys?limit=100')
+      .set('Authorization', `Bearer ${token}`)
       .expect(200);
-
-    await app.get(ApiKeyService).revokeApiKey(minted.id, workspaceId);
+    expect(Array.isArray(list.body.data)).toBe(true);
+    expect(
+      list.body.data.some((key: any) => key.id === createdKeyIds.at(-1)),
+    ).toBe(true);
 
     await request(app.getHttpServer())
-      .get('/api/keys/')
-      .set(bearerAuth(minted.token))
+      .delete(`/api/v1/keys/${createdKeyIds.at(-1)}`)
+      .set('Authorization', `Bearer ${token}`)
+      .expect(204);
+
+    // idempotent
+    await request(app.getHttpServer())
+      .delete(`/api/v1/keys/${createdKeyIds.at(-1)}`)
+      .set('Authorization', `Bearer ${token}`)
+      .expect(204);
+
+    // revoked key no longer authenticates
+    await request(app.getHttpServer())
+      .get('/api/v1/spaces')
+      .set('Authorization', `Bearer ${token}`)
       .expect(401);
+  });
+
+  it('walks the spaces + pages + share + access contract', async () => {
+    const token = await mintKey('v1-e2e-flow');
+    const auth = { Authorization: `Bearer ${token}` };
+    const server = app.getHttpServer();
+
+    // spaces list
+    const spaces = await request(server)
+      .get('/api/v1/spaces?limit=1')
+      .set(auth)
+      .expect(200);
+    expect(spaces.body.data.length).toBeGreaterThan(0);
+    const spaceId = spaces.body.data[0].id;
+
+    // space info
+    await request(server).get(`/api/v1/spaces/${spaceId}`).set(auth).expect(200);
+
+    // create page (markdown-first)
+    const created = await request(server)
+      .post(`/api/v1/spaces/${spaceId}/pages`)
+      .set(auth)
+      .send({ title: 'v1-e2e', content: '# hello', parentId: undefined })
+      .expect(201);
+    pageId = created.body.id;
+
+    // get page (default markdown content)
+    const got = await request(server)
+      .get(`/api/v1/pages/${pageId}?format=markdown&include=breadcrumbs`)
+      .set(auth)
+      .expect(200);
+    expect(got.body.permissions).toMatchObject({ canEdit: expect.any(Boolean) });
+    expect(Array.isArray(got.body.breadcrumbs)).toBe(true);
+
+    // patch title
+    await request(server)
+      .patch(`/api/v1/pages/${pageId}`)
+      .set(auth)
+      .send({ title: 'v1-e2e-renamed' })
+      .expect(200);
+
+    // put content
+    await request(server)
+      .put(`/api/v1/pages/${pageId}/content`)
+      .set(auth)
+      .send({ content: 'appended', operation: 'append', format: 'markdown' })
+      .expect(200);
+
+    // share upsert then delete
+    const shared = await request(server)
+      .put(`/api/v1/pages/${pageId}/share`)
+      .set(auth)
+      .send({ shared: true, includeSubPages: false })
+      .expect(200);
+    expect(shared.body.shared).toBe(true);
+    expect(shared.body.publicUrl).toContain('/share/');
+
+    await request(server)
+      .put(`/api/v1/pages/${pageId}/share`)
+      .set(auth)
+      .send({ shared: false })
+      .expect(200);
+
+    // access: restrict, grants, patch, delete, unrestrict
+    await request(server)
+      .put(`/api/v1/pages/${pageId}/access/restriction`)
+      .set(auth)
+      .send({ restricted: true })
+      .expect(200);
+
+    const grants = await request(server)
+      .post(`/api/v1/pages/${pageId}/access/grants`)
+      .set(auth)
+      .send({ grants: [{ type: 'user', principalId: userId, role: 'writer' }] })
+      .expect(201);
+    const grantId = grants.body.data[0]?.id;
+    expect(grantId).toBeDefined();
+
+    const access = await request(server)
+      .get(`/api/v1/pages/${pageId}/access?cursor=`)
+      .set(auth)
+      .expect(200);
+    expect(access.body.restriction).toBe('direct');
+    expect(access.body.grants.data.length).toBeGreaterThan(0);
+    expect(access.body.grants.meta.nextCursor).toBeNull();
+
+    await request(server)
+      .patch(`/api/v1/pages/${pageId}/access/grants/${grantId}`)
+      .set(auth)
+      .send({ role: 'reader' })
+      .expect(200);
+
+    await request(server)
+      .delete(`/api/v1/pages/${pageId}/access/grants/${grantId}`)
+      .set(auth)
+      .expect(204);
+
+    await request(server)
+      .delete(`/api/v1/pages/${pageId}/access/grants/${grantId}`)
+      .set(auth)
+      .expect(204); // idempotent
+
+    await request(server)
+      .put(`/api/v1/pages/${pageId}/access/restriction`)
+      .set(auth)
+      .send({ restricted: false })
+      .expect(200);
+
+    // search
+    await request(server)
+      .get('/api/v1/search?q=v1-e2e-renamed&limit=5')
+      .set(auth)
+      .expect(200)
+      .expect((res) => {
+        expect(Array.isArray(res.body.data)).toBe(true);
+        expect(res.body.meta).toEqual({ nextCursor: null });
+      });
+
+    // children + breadcrumbs + list endpoints
+    await request(server)
+      .get(`/api/v1/pages/${pageId}/children`)
+      .set(auth)
+      .expect(200);
+    await request(server)
+      .get(`/api/v1/spaces/${spaceId}/pages`)
+      .set(auth)
+      .expect(200);
+
+    // trash (idempotent 204)
+    await request(server)
+      .delete(`/api/v1/pages/${pageId}`)
+      .set(auth)
+      .expect(204);
+    await request(server)
+      .delete(`/api/v1/pages/${pageId}`)
+      .set(auth)
+      .expect(204);
+
+    // restore
+    await request(server)
+      .post(`/api/v1/pages/${pageId}/restore`)
+      .set(auth)
+      .expect(201);
   });
 });

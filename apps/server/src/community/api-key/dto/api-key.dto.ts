@@ -16,8 +16,3 @@ export class CreateApiKeyDto {
   @IsIn(['90d', '1y', '5y', '10y'])
   expiresIn?: string;
 }
-
-export class ApiKeyIdDto {
-  @IsString()
-  id: string;
-}

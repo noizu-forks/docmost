@@ -306,6 +306,7 @@ export class PageService {
         'creatorId',
         'isBase',
         'deletedAt',
+        'updatedAt',
       ])
       .select((eb) => this.pageRepo.withHasChildren(eb))
       .where('deletedAt', 'is', null)
