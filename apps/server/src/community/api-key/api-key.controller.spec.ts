@@ -1,4 +1,5 @@
-import { ForbiddenException } from '@nestjs/common';
+import { ForbiddenException, NotFoundException } from '@nestjs/common';
+
 import { createMockAbilityFactory } from '../test-helpers/casl.mock';
 import { ApiKeyController } from './api-key.controller';
 
@@ -70,12 +71,23 @@ describe('ApiKeyController (v1)', () => {
   it('revokes idempotently (204)', async () => {
     const { controller, apiKeyService } = createController();
 
+    const keyId = '01a07d34-3338-7810-9642-815669b9309d';
+
     await expect(
-      controller.revokeApiKey('key_1', user, workspace),
+      controller.revokeApiKey(keyId, user, workspace),
     ).resolves.toBeUndefined();
     await expect(
-      controller.revokeApiKey('missing', user, workspace),
+      controller.revokeApiKey(keyId, user, workspace),
     ).resolves.toBeUndefined();
     expect(apiKeyService.revokeApiKey).toHaveBeenCalledTimes(2);
+  });
+
+  it('rejects a malformed key id with 404 (not 500)', async () => {
+    const { controller, apiKeyService } = createController();
+
+    await expect(
+      controller.revokeApiKey('not-a-uuid', user, workspace),
+    ).rejects.toThrow(NotFoundException);
+    expect(apiKeyService.revokeApiKey).not.toHaveBeenCalled();
   });
 });

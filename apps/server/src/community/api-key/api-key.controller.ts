@@ -11,7 +11,7 @@ import {
   UseFilters,
   UseGuards,
 } from '@nestjs/common';
-import { HttpStatus } from '@nestjs/common';
+import { HttpStatus, NotFoundException } from '@nestjs/common';
 import { AuthUser } from '../../common/decorators/auth-user.decorator';
 import { AuthWorkspace } from '../../common/decorators/auth-workspace.decorator';
 import { User, Workspace } from '@docmost/db/types/entity.types';
@@ -25,6 +25,7 @@ import { V1PaginationDto } from '../dto/v1-pagination.dto';
 import { toDataEnvelope, toPaginationOptions } from '../pagination';
 import { V1ExceptionFilter } from '../http/error-filter';
 import { ApiKeyService } from './api-key.service';
+import { isUUID } from 'class-validator';
 import { CreateApiKeyDto } from './dto/api-key.dto';
 import { SkipTransform } from '../../common/decorators/skip-transform.decorator';
 
@@ -94,6 +95,12 @@ export class ApiKeyController {
     @AuthWorkspace() workspace: Workspace,
   ) {
     this.assertApiAdmin(user, workspace);
+
+    // non-UUID ids would otherwise surface as a Postgres 500; a malformed
+    // id simply does not reference a key (valid-but-missing stays 204).
+    if (!isUUID(keyId)) {
+      throw new NotFoundException('API key not found');
+    }
 
     await this.apiKeyService.revokeApiKey(keyId, workspace.id);
   }
