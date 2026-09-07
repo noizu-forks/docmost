@@ -33,6 +33,7 @@ import { V1PaginationDto } from '../dto/v1-pagination.dto';
 import { toDataEnvelope, toPaginationOptions } from '../pagination';
 import { V1ExceptionFilter } from '../http/error-filter';
 import { CreateV1SpaceDto, UpdateV1SpaceDto } from './dto/space.dto';
+import { SkipTransform } from '../../common/decorators/skip-transform.decorator';
 
 /**
  * v1 spaces. Same CASL gates as core's SPA controller (principle 9),
@@ -50,6 +51,7 @@ export class SpacesController {
     private readonly workspaceAbility: WorkspaceAbilityFactory,
   ) {}
 
+  @SkipTransform()
   @Get('/')
   async getSpaces(
     @Query() pagination: V1PaginationDto,
@@ -89,6 +91,7 @@ export class SpacesController {
     return toDataEnvelope(result);
   }
 
+  @SkipTransform()
   @Get('/:spaceId')
   async getSpace(
     @Param('spaceId') spaceId: string,
@@ -121,6 +124,7 @@ export class SpacesController {
     };
   }
 
+  @SkipTransform()
   @Post('/')
   createSpace(
     @Body() dto: CreateV1SpaceDto,
@@ -135,6 +139,7 @@ export class SpacesController {
     return this.spaceService.createSpace(user, workspace.id, dto);
   }
 
+  @SkipTransform()
   @Patch('/:spaceId')
   async updateSpace(
     @Param('spaceId') spaceId: string,

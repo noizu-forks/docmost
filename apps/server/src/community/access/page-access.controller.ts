@@ -33,6 +33,7 @@ import {
   PostV1GrantsDto,
   PutV1RestrictionDto,
 } from './dto/page-access.dto';
+import { SkipTransform } from '../../common/decorators/skip-transform.decorator';
 
 /**
  * v1 page access — the restriction + grants surface over the existing
@@ -50,6 +51,7 @@ export class PageAccessController {
     private readonly grantsMapper: GrantsMapper,
   ) {}
 
+  @SkipTransform()
   @Get(':pageId/access')
   async getAccess(
     @Param('pageId') pageId: string,
@@ -95,6 +97,7 @@ export class PageAccessController {
     return { restriction, canAccess, canEdit, grants };
   }
 
+  @SkipTransform()
   @Put(':pageId/access/restriction')
   async putRestriction(
     @Param('pageId') pageId: string,
@@ -124,6 +127,7 @@ export class PageAccessController {
     return { restriction: 'direct' as const };
   }
 
+  @SkipTransform()
   @Post(':pageId/access/grants')
   async postGrants(
     @Param('pageId') pageId: string,
@@ -142,6 +146,7 @@ export class PageAccessController {
     return this.listAllGrants(pageAccess.id);
   }
 
+  @SkipTransform()
   @Patch(':pageId/access/grants/:grantId')
   async patchGrant(
     @Param('pageId') pageId: string,
@@ -162,6 +167,7 @@ export class PageAccessController {
   }
 
   @HttpCode(HttpStatus.NO_CONTENT)
+  @SkipTransform()
   @Delete(':pageId/access/grants/:grantId')
   async deleteGrant(
     @Param('pageId') pageId: string,

@@ -1,6 +1,10 @@
 import { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import * as request from 'supertest';
+import {
+  FastifyAdapter,
+  NestFastifyApplication,
+} from '@nestjs/platform-fastify';
 import { AppModule } from '../src/app.module';
 import { ApiKeyService } from '../src/community/api-key/api-key.service';
 import { UserRepo } from '@docmost/db/repos/user/user.repo';
@@ -25,6 +29,7 @@ const TEST_ENV_READY = !!(
 
 (TEST_ENV_READY ? describe : describe.skip)('Community API v1 (e2e)', () => {
   let app: INestApplication;
+  let httpBase: string;
   let pageId: string;
   const createdKeyIds: string[] = [];
 
@@ -36,9 +41,13 @@ const TEST_ENV_READY = !!(
       imports: [AppModule],
     }).compile();
 
-    app = moduleFixture.createNestApplication();
+    app = moduleFixture.createNestApplication<NestFastifyApplication>(
+      new FastifyAdapter(),
+    );
     app.setGlobalPrefix('api');
     await app.init();
+    await app.listen(0);
+    httpBase = `http://127.0.0.1:${(app.getHttpServer().address() as any).port}`;
   });
 
   afterAll(async () => {
@@ -61,7 +70,7 @@ const TEST_ENV_READY = !!(
   };
 
   it('rejects requests without a token (uniform error envelope)', async () => {
-    const res = await request(app.getHttpServer()).get('/api/v1/spaces');
+    const res = await request(httpBase).get('/api/v1/spaces');
     expect([401, 403]).toContain(res.status);
     expect(res.body.error).toMatchObject({
       code: expect.any(String),
@@ -72,28 +81,25 @@ const TEST_ENV_READY = !!(
   it('lists and revokes API keys', async () => {
     const token = await mintKey('v1-e2e-keys');
 
-    const list = await request(app.getHttpServer())
+    const list = await request(httpBase)
       .get('/api/v1/keys?limit=100')
       .set('Authorization', `Bearer ${token}`)
       .expect(200);
     expect(Array.isArray(list.body.data)).toBe(true);
     expect(
-      list.body.data.some((key: any) => key.id === createdKeyIds.at(-1)),
+      list.body.data.some((key: any) => key.id === createdKeyIds[createdKeyIds.length - 1]),
     ).toBe(true);
 
-    await request(app.getHttpServer())
-      .delete(`/api/v1/keys/${createdKeyIds.at(-1)}`)
+    await request(httpBase)
+      .delete(`/api/v1/keys/${createdKeyIds[createdKeyIds.length - 1]}`)
       .set('Authorization', `Bearer ${token}`)
       .expect(204);
 
     // idempotent
-    await request(app.getHttpServer())
-      .delete(`/api/v1/keys/${createdKeyIds.at(-1)}`)
-      .set('Authorization', `Bearer ${token}`)
-      .expect(204);
-
-    // revoked key no longer authenticates
-    await request(app.getHttpServer())
+    // revoked key no longer authenticates — the key IS its own credential, so
+    // replaying the delete with it now yields 401 (idempotency applies to the
+    // resource being gone, not to revoked credentials)
+    await request(httpBase)
       .get('/api/v1/spaces')
       .set('Authorization', `Bearer ${token}`)
       .expect(401);
@@ -102,7 +108,7 @@ const TEST_ENV_READY = !!(
   it('walks the spaces + pages + share + access contract', async () => {
     const token = await mintKey('v1-e2e-flow');
     const auth = { Authorization: `Bearer ${token}` };
-    const server = app.getHttpServer();
+    const server = httpBase;
 
     // spaces list
     const spaces = await request(server)

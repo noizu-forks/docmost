@@ -18,6 +18,7 @@ import {
 } from '../../core/casl/interfaces/space-ability.type';
 import { V1ExceptionFilter } from '../http/error-filter';
 import { V1SearchDto } from './dto/search.dto';
+import { SkipTransform } from '../../common/decorators/skip-transform.decorator';
 
 /**
  * GET /v1/search?q=&spaceId=&limit= — core search only supports
@@ -32,6 +33,7 @@ export class SearchController {
     private readonly spaceAbility: SpaceAbilityFactory,
   ) {}
 
+  @SkipTransform()
   @Get('/')
   async search(
     @Query() dto: V1SearchDto,

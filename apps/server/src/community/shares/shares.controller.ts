@@ -23,6 +23,7 @@ import { ShareService } from '../../core/share/share.service';
 import { EnvironmentService } from '../../integrations/environment/environment.service';
 import { V1ExceptionFilter } from '../http/error-filter';
 import { PutV1ShareDto } from './dto/share.dto';
+import { SkipTransform } from '../../common/decorators/skip-transform.decorator';
 
 /**
  * One share upsert per page (principle 6): GET returns the effective share
@@ -42,6 +43,7 @@ export class SharesController {
     private readonly environmentService: EnvironmentService,
   ) {}
 
+  @SkipTransform()
   @Get(':pageId/share')
   async getShare(
     @Param('pageId') pageId: string,
@@ -66,6 +68,7 @@ export class SharesController {
     };
   }
 
+  @SkipTransform()
   @Put(':pageId/share')
   async putShare(
     @Param('pageId') pageId: string,
