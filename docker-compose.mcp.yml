@@ -1,0 +1,56 @@
+# MCP service override — do NOT edit docker-compose.yml (upstream file).
+#
+#   docker compose -f docker-compose.yml -f docker-compose.mcp.yml up
+#
+# Adds:
+#   mcp   — vendored docmost-mcp Elixir service (mcp/ subtree), MCP over
+#           streamable HTTP on :4000, session-identity auth via the shared
+#           APP_SECRET
+#   proxy — Caddy edge on :80 (replaces the docmost app's exposed port):
+#           {site}/mcp* → mcp:4000, everything else → docmost:3000
+#
+# Session auth: docmost signs session JWTs with APP_SECRET (HS256); the mcp
+# service receives the same value as DOCMOST_APP_SECRET and verifies the
+# `authToken` cookie (or Authorization Bearer) locally, then forwards the JWT
+# to Docmost REST as the signed-in user.
+
+services:
+  # The edge proxy takes over the exposed port.
+  docmost:
+    ports: !override []
+
+  mcp:
+    build:
+      context: ./mcp
+    environment:
+      DOCMOST_MCP_STDIO: "false"
+      DOCMOST_MCP_HTTP_PORT: "4000"
+      # MCP calls Docmost REST through the internal network as the signed-in
+      # session user (verified locally against DOCMOST_APP_SECRET).
+      DOCMOST_APP_SECRET: ${APP_SECRET:-REPLACE_WITH_LONG_SECRET}
+      DOCMOST_API_URL: http://docmost:3000
+      # Static shared-key fallback for local CLI clients — disabled unless
+      # explicitly opted in (and then only honored when the key matches).
+      # DOCMOST_API_KEY: ${DOCMOST_API_KEY}
+      # DOCMOST_MCP_ALLOW_STATIC_KEY: "1"
+      # Page create/update/delete/share — off by default:
+      # DOCMOST_MCP_WRITES: "1"
+      # ── Direct Postgres access (NOT enabled) ─────────────────────────────
+      # Door left open for future tools that need direct DB reads. To enable,
+      # uncomment DATABASE_URL, join the same network as `db`, and add a
+      # read-only Postgres role/credential via your secret manager.
+      # DATABASE_URL: postgresql://docmost:STRONG_DB_PASSWORD@db:5432/docmost
+    restart: unless-stopped
+    depends_on:
+      - docmost
+
+  proxy:
+    image: caddy:2-alpine
+    ports:
+      - "${PROXY_PORT:-80}:80"
+    volumes:
+      - ./mcp/Caddyfile:/etc/caddy/Caddyfile:ro
+    restart: unless-stopped
+    depends_on:
+      - docmost
+      - mcp

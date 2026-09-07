@@ -67,3 +67,38 @@ Set `config :docmost_mcp, start_stdio: false` when embedding the OTP app.
 ## Development notes
 
 The checkout uses the current sibling `elixir-mcp` library; `NOIZU_MCP_PATH` can override that path outside the monorepo.
+
+## Fork integration (session-identity auth + HTTP transport)
+
+This copy of docmost-mcp is vendored into noizu-forks/docmost via `git subtree`
+(path `mcp/`). On top of the standalone service it adds:
+
+- **Streamable HTTP transport** (`DocmostMCP.HTTP`): Bandit serves the MCP
+  streamable HTTP endpoint at `/mcp` on `DOCMOST_MCP_HTTP_PORT` (default 4000).
+  Stdio still works for CLI use (`DOCMOST_MCP_STDIO=true`).
+- **Session-identity auth** (`DocmostMCP.Auth`, `DocmostMCP.Auth.SessionPlug`):
+  requests are authenticated as the *signed-in docmost user*. The edge proxy
+  forwards cookies untouched; the plug verifies the `authToken` cookie or
+  `Authorization: Bearer` JWT locally (HS256, `DOCMOST_APP_SECRET` — the same
+  APP_SECRET docmost signs sessions with), accepts only interactive user
+  sessions (`type: "access"`), and forwards the verified JWT as Bearer on every
+  Docmost REST call. Invalid/expired → `401` with a JSON-RPC error body.
+- **Static-key fallback**: `DOCMOST_API_KEY` as Bearer is honored only when
+  `DOCMOST_MCP_ALLOW_STATIC_KEY=1` (local/dev CLI use). A presented-but-invalid
+  session credential never downgrades to the static key.
+- **Container setup**: the docmost fork's `docker-compose.mcp.yml` (override
+  file — upstream `docker-compose.yml` is untouched) builds this Dockerfile and
+  adds a Caddy edge proxy routing `{site}/mcp*` → mcp:4000 (SSE-safe,
+  unbuffered) and everything else → docmost:3000.
+
+Local checks: `mix test`, `mix format --check-formatted`.
+
+**Subtree sync** (run from the docmost fork root):
+
+    git subtree pull --prefix=mcp https://github.com/noizu-labs/docmost-mcp.git develop
+
+Fork-local modifications under `mcp/` (auth modules, HTTP transport, this
+section, Dockerfile/Caddyfile) may need a small re-apply after upstream syncs —
+they are all additive files except: `mix.exs` (deps), `config/runtime.exs`
+(auth envs), `lib/docmost_mcp/{application,config,server}.ex`,
+`lib/docmost_mcp/client/req.ex` (bearer resolution), each a few lines.

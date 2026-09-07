@@ -5,12 +5,11 @@ defmodule DocmostMCP.Application do
 
   @impl true
   def start(_type, _args) do
-    transport =
-      if Application.get_env(:docmost_mcp, :start_stdio, true) do
-        [{DocmostMCP.Server, transport: :stdio}]
-      else
-        []
-      end
+    # The MCP server supervision tree must run for HTTP sessions to spawn
+    # (registries + SessionSupervisor); `transport: :stdio` only adds the
+    # stdio listener on top.
+    stdio? = Application.get_env(:docmost_mcp, :start_stdio, true)
+    server_child = {DocmostMCP.Server, if(stdio?, do: [transport: :stdio], else: [])}
 
     # HTTP edge (fork integration): serves /mcp over streamable HTTP with
     # session-identity auth, for the {site}/mcp proxy route.
@@ -24,7 +23,7 @@ defmodule DocmostMCP.Application do
         []
       end
 
-    children = [DocmostMCP.VersionStore | http] ++ transport
+    children = [DocmostMCP.VersionStore | http] ++ [server_child]
 
     Supervisor.start_link(children, strategy: :one_for_one, name: DocmostMCP.Supervisor)
   end
