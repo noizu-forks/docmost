@@ -2,7 +2,7 @@ defmodule DocmostMCP.VFS.Backend do
   @moduledoc "Docmost spaces/pages projected as directories, Markdown files, and YAML control metadata."
   use Noizu.MCP.VFS
 
-  alias DocmostMCP.{Client, Config, Normalize}
+  alias DocmostMCP.{Auth, Client, Config, Normalize}
   alias DocmostMCP.VFS.{MetaFile, PageFile, Path}
   alias Noizu.MCP.Server.Features.Pagination
   alias Noizu.MCP.VFS
@@ -12,22 +12,26 @@ defmodule DocmostMCP.VFS.Backend do
     do: "Docmost spaces and wiki pages. Write `<page>.meta` to manage sharing and access."
 
   @impl true
-  def stat(path, _ctx) do
+  def stat(path, ctx) do
+    Auth.assume(ctx)
     with {:ok, kind} <- Path.parse(path), do: stat_kind(kind)
   end
 
   @impl true
-  def list(path, cursor, _ctx) do
+  def list(path, cursor, ctx) do
+    Auth.assume(ctx)
     with {:ok, kind} <- Path.parse(path), do: list_kind(kind, cursor)
   end
 
   @impl true
-  def read(path, _ctx) do
+  def read(path, ctx) do
+    Auth.assume(ctx)
     with {:ok, kind} <- Path.parse(path), do: read_kind(kind)
   end
 
   @impl true
-  def create(path, data, _ctx) do
+  def create(path, data, ctx) do
+    Auth.assume(ctx)
     with true <- Config.writes?() || {:error, :eacces},
          {:ok, kind} <- Path.parse(path) do
       create_kind(kind, data)
@@ -38,7 +42,8 @@ defmodule DocmostMCP.VFS.Backend do
   end
 
   @impl true
-  def write(path, data, _ctx) do
+  def write(path, data, ctx) do
+    Auth.assume(ctx)
     with true <- Config.writes?() || {:error, :eacces},
          {:ok, kind} <- Path.parse(path) do
       write_kind(kind, data)
@@ -49,7 +54,8 @@ defmodule DocmostMCP.VFS.Backend do
   end
 
   @impl true
-  def remove(path, _ctx) do
+  def remove(path, ctx) do
+    Auth.assume(ctx)
     with true <- Config.writes?() || {:error, :eacces},
          {:ok, kind} <- Path.parse(path) do
       remove_kind(kind)
@@ -60,7 +66,8 @@ defmodule DocmostMCP.VFS.Backend do
   end
 
   @impl true
-  def search(root, query, _ctx) do
+  def search(root, query, ctx) do
+    Auth.assume(ctx)
     with {:ok, kind} <- Path.parse(root),
          {:ok, pages} <- pages_for(kind) do
       needle = String.downcase(query)
