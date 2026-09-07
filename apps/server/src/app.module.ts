@@ -5,6 +5,7 @@ import { AppService } from './app.service';
 import { EnvironmentService } from './integrations/environment/environment.service';
 import { AuditActorInterceptor } from './common/interceptors/audit-actor.interceptor';
 import { CoreModule } from './core/core.module';
+import { CommunityModule } from './community/community.module';
 import { EnvironmentModule } from './integrations/environment/environment.module';
 import { CollaborationModule } from './collaboration/collaboration.module';
 import { WsModule } from './ws/ws.module';
@@ -54,6 +55,7 @@ try {
     LoggerModule,
     ...(enterpriseModules.length > 0 ? [] : [NoopAuditModule]),
     CoreModule,
+    CommunityModule,
     DatabaseModule,
     EnvironmentModule,
     EncryptionModule,
