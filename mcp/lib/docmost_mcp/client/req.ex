@@ -85,8 +85,17 @@ defmodule DocmostMCP.Client.Req do
     end
   end
   @impl true
-  def list_permissions(id, cursor),
-    do: request(:post, "/pages/permissions", compact(%{pageId: id, limit: 100, cursor: cursor}))
+  # Core has no POST /pages/permissions here; grants come from the v1
+  # access surface nested under the restriction summary.
+  def list_permissions(id, cursor) do
+    qs = if cursor in [nil, ""], do: "", else: "?cursor=\#{URI.encode_www_form(cursor)}"
+
+    case request(:get, "/v1/pages/\#{id}/access\#{qs}", nil) do
+      {:ok, %{"grants" => grants}} -> {:ok, grants}
+      {:ok, _} -> {:ok, %{"data" => [], "meta" => %{"nextCursor" => nil}}}
+      error -> error
+    end
+  end
 
   @impl true
   def restrict_page(id), do: request(:post, "/pages/restrict", %{pageId: id})
