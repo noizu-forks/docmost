@@ -36,6 +36,7 @@ import {
   DeleteV1PageDto,
   PatchV1PageDto,
 } from './dto/page.dto';
+import { SkipTransform } from '../../common/decorators/skip-transform.decorator';
 
 /**
  * v1 pages: page resources inside a space (list/create) and single-page
@@ -55,6 +56,7 @@ export class PagesController {
 
   // --- space-scoped ---
 
+  @SkipTransform()
   @Get('v1/spaces/:spaceId/pages')
   async listSpacePages(
     @Param('spaceId') spaceId: string,
@@ -80,6 +82,7 @@ export class PagesController {
     return toDataEnvelope(result);
   }
 
+  @SkipTransform()
   @Post('v1/spaces/:spaceId/pages')
   async createPage(
     @Param('spaceId') spaceId: string,
@@ -117,6 +120,7 @@ export class PagesController {
 
   // --- page-scoped ---
 
+  @SkipTransform()
   @Get('v1/pages/:pageId')
   async getPage(
     @Param('pageId') pageId: string,
@@ -172,6 +176,7 @@ export class PagesController {
     return result;
   }
 
+  @SkipTransform()
   @Get('v1/pages/:pageId/children')
   async getChildren(
     @Param('pageId') pageId: string,
@@ -198,6 +203,7 @@ export class PagesController {
     return toDataEnvelope(result);
   }
 
+  @SkipTransform()
   @Get('v1/pages/:pageId/breadcrumbs')
   async getBreadcrumbs(
     @Param('pageId') pageId: string,
@@ -212,6 +218,7 @@ export class PagesController {
     };
   }
 
+  @SkipTransform()
   @Patch('v1/pages/:pageId')
   async patchPage(
     @Param('pageId') pageId: string,
@@ -262,6 +269,7 @@ export class PagesController {
   }
 
   @HttpCode(HttpStatus.NO_CONTENT)
+  @SkipTransform()
   @Delete('v1/pages/:pageId')
   async deletePage(
     @Param('pageId') pageId: string,
@@ -290,6 +298,7 @@ export class PagesController {
     await this.pageService.removePage(pageId, user.id, workspace.id);
   }
 
+  @SkipTransform()
   @Post('v1/pages/:pageId/restore')
   async restorePage(
     @Param('pageId') pageId: string,

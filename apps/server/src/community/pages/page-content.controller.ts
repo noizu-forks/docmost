@@ -16,6 +16,7 @@ import { PageService } from '../../core/page/services/page.service';
 import { jsonToHtml, jsonToMarkdown } from '../../collaboration/collaboration.util';
 import { V1ExceptionFilter } from '../http/error-filter';
 import { PutV1PageContentDto } from './dto/page.dto';
+import { SkipTransform } from '../../common/decorators/skip-transform.decorator';
 
 /**
  * PUT /v1/pages/:pageId/content — full content write with optional
@@ -31,6 +32,7 @@ export class PageContentController {
     private readonly pageAccessService: PageAccessService,
   ) {}
 
+  @SkipTransform()
   @Put(':pageId/content')
   async putContent(
     @Param('pageId') pageId: string,

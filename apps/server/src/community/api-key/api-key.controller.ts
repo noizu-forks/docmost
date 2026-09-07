@@ -26,6 +26,7 @@ import { toDataEnvelope, toPaginationOptions } from '../pagination';
 import { V1ExceptionFilter } from '../http/error-filter';
 import { ApiKeyService } from './api-key.service';
 import { CreateApiKeyDto } from './dto/api-key.dto';
+import { SkipTransform } from '../../common/decorators/skip-transform.decorator';
 
 /**
  * v1 API key management (admin only; WorkspaceCaslAction.Manage on API).
@@ -41,6 +42,7 @@ export class ApiKeyController {
     private readonly workspaceAbility: WorkspaceAbilityFactory,
   ) {}
 
+  @SkipTransform()
   @Post('/')
   async createApiKey(
     @Body() createApiKeyDto: CreateApiKeyDto,
@@ -56,6 +58,7 @@ export class ApiKeyController {
     );
   }
 
+  @SkipTransform()
   @Get('/')
   async listApiKeys(
     @Query() pagination: V1PaginationDto,
@@ -83,6 +86,7 @@ export class ApiKeyController {
   }
 
   @HttpCode(HttpStatus.NO_CONTENT)
+  @SkipTransform()
   @Delete('/:keyId')
   async revokeApiKey(
     @Param('keyId') keyId: string,
