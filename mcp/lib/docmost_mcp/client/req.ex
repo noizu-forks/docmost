@@ -111,10 +111,20 @@ defmodule DocmostMCP.Client.Req do
 
   defp headers do
     [
-      {"authorization", "Bearer " <> Config.api_key()},
+      {"authorization", "Bearer " <> bearer()},
       {"accept", "application/json"},
       {"user-agent", "docmost-mcp/0.1.0"}
     ]
+  end
+
+  # Fork session-identity auth: prefer the verified docmost session JWT of the
+  # signed-in user (see DocmostMCP.Auth); fall back to the static shared key
+  # for stdio/CLI callers with no session.
+  defp bearer do
+    case DocmostMCP.Auth.current_bearer() do
+      token when is_binary(token) and token != "" -> token
+      _ -> Config.api_key()
+    end
   end
 
   defp unwrap(%{"data" => data}), do: data

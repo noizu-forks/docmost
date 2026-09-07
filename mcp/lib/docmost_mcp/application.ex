@@ -12,7 +12,19 @@ defmodule DocmostMCP.Application do
         []
       end
 
-    children = [DocmostMCP.VersionStore | transport]
+    # HTTP edge (fork integration): serves /mcp over streamable HTTP with
+    # session-identity auth, for the {site}/mcp proxy route.
+    http =
+      if DocmostMCP.Config.start_http?() do
+        [
+          {Bandit,
+           plug: {DocmostMCP.HTTP, []}, scheme: :http, port: DocmostMCP.Config.http_port()}
+        ]
+      else
+        []
+      end
+
+    children = [DocmostMCP.VersionStore | http] ++ transport
 
     Supervisor.start_link(children, strategy: :one_for_one, name: DocmostMCP.Supervisor)
   end

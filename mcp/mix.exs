@@ -26,7 +26,10 @@ defmodule DocmostMCP.MixProject do
     [
       noizu_mcp_dep(),
       {:req, "~> 0.5"},
-      {:plug, "~> 1.16", only: :test},
+      # HTTP streamable transport + session-identity auth plug (fork integration)
+      {:plug, "~> 1.16"},
+      {:bandit, "~> 1.5"},
+      {:jose, "~> 1.11"},
       {:jason, "~> 1.4"},
       {:yaml_elixir, "~> 2.11"}
     ]

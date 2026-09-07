@@ -21,4 +21,27 @@ defmodule DocmostMCP.Config do
       _ -> raise "DOCMOST_API_KEY is required"
     end
   end
+
+  # ── session-identity auth (fork integration) ──────────────────────────────
+
+  @doc "Docmost APP_SECRET — signs/verifies session JWTs. Set via DOCMOST_APP_SECRET."
+  def app_secret, do: Application.get_env(:docmost_mcp, :app_secret)
+
+  @doc "Opt-in static shared-key fallback (local/dev CLI use). Default: disabled."
+  def allow_static_key? do
+    Application.get_env(:docmost_mcp, :allow_static_key, false) and
+      static_api_key() != nil
+  end
+
+  @doc "The static shared DOCMOST_API_KEY, when configured."
+  def static_api_key do
+    case Application.get_env(:docmost_mcp, :api_key) do
+      key when is_binary(key) and key != "" -> key
+      _ -> nil
+    end
+  end
+
+  def start_http?, do: Application.get_env(:docmost_mcp, :start_http, true)
+
+  def http_port, do: Application.get_env(:docmost_mcp, :http_port, 4000)
 end
