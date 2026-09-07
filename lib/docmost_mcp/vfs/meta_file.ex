@@ -162,8 +162,10 @@ defmodule DocmostMCP.VFS.MetaFile do
     updates =
       Enum.flat_map(requested, fn requested_permission ->
         case existing_by_principal[identity(requested_permission)] do
-          %{"grant_id" => grant_id, "role" => role} when role != requested_permission["role"] ->
-            [{grant_id, requested_permission["role"]}]
+          %{"grant_id" => grant_id, "role" => role} ->
+            if role != requested_permission["role"],
+              do: [{grant_id, requested_permission["role"]}],
+              else: []
 
           _ ->
             []
@@ -182,7 +184,8 @@ defmodule DocmostMCP.VFS.MetaFile do
 
     # Add first: on partial API failure access remains a safe superset, never an empty ACL.
     with :ok <- each(adds, &Client.add_grants(page_id, &1)),
-         :ok <- each(updates, fn {grant_id, role} -> Client.update_grant(page_id, grant_id, role) end),
+         :ok <-
+           each(updates, fn {grant_id, role} -> Client.update_grant(page_id, grant_id, role) end),
          :ok <- each(removes, &Client.remove_grant(page_id, &1)),
          do: :ok
   end

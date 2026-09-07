@@ -93,6 +93,21 @@ defmodule DocmostMCP.VFSTest do
     assert yaml =~ "https://docs.example.com/share/public-key/p/untitled-start"
   end
 
+  test "server-provided publicUrl wins over local derivation", %{ctx: ctx} do
+    DocmostMCP.TestClient.put_share("p1", %{
+      "shared" => true,
+      "id" => "sh1",
+      "key" => "k",
+      "level" => 0,
+      "publicUrl" => "https://share.example.com/p/k"
+    })
+
+    assert {:ok, _} = Backend.write("/engineering/start.meta", "share: public\n", ctx)
+    assert {:ok, yaml, _} = Backend.read("/engineering/start.meta", ctx)
+    assert yaml =~ "https://share.example.com/p/k"
+    refute yaml =~ "untitled-start"
+  end
+
   test "unknown meta keys are rejected", %{ctx: ctx} do
     assert {:error, :eio} = Backend.write("/engineering/start.meta", "surprise: true\n", ctx)
   end
@@ -108,15 +123,14 @@ defmodule DocmostMCP.VFSTest do
   end
 
   test "public share settings can be changed true to false", %{ctx: ctx} do
-    share = %{
+    DocmostMCP.TestClient.put_share("p1", %{
+      "shared" => true,
       "id" => "sh1",
       "key" => "k",
       "level" => 0,
       "includeSubPages" => true,
       "searchIndexing" => true
-    }
-
-    DocmostMCP.TestClient.put_share("p1", [share])
+    })
 
     assert {:ok, _} =
              Backend.write(
@@ -131,15 +145,20 @@ defmodule DocmostMCP.VFSTest do
   end
 
   test "inherited-only share and restriction cannot be removed", %{ctx: ctx} do
-    DocmostMCP.TestClient.put_share("p1", [%{"id" => "ancestor", "key" => "k", "level" => 1}])
+    DocmostMCP.TestClient.put_share("p1", %{
+      "shared" => true,
+      "id" => "ancestor",
+      "key" => "k",
+      "level" => 1
+    })
+
     assert {:error, :eacces} = Backend.write("/engineering/start.meta", "share: private\n", ctx)
 
-    DocmostMCP.TestClient.put_permission_info("p1", %{
-      "hasDirectRestriction" => false,
-      "hasInheritedRestriction" => true,
+    DocmostMCP.TestClient.put_access("p1", %{
+      "restriction" => "inherited",
       "canAccess" => true,
       "canEdit" => false,
-      "permissions" => []
+      "grants" => []
     })
 
     assert {:error, :eacces} = Backend.write("/engineering/start.meta", "access: open\n", ctx)
@@ -157,15 +176,14 @@ defmodule DocmostMCP.VFSTest do
              Backend.write("/engineering/start.meta", "search_indexing: false\n", ctx)
   end
 
-  test "canonical permissions use Docmost id type role and removal uses principals", %{ctx: ctx} do
+  test "canonical permissions use Docmost grant ids and removal deletes grants", %{ctx: ctx} do
     user = "11111111-1111-4111-8111-111111111111"
 
-    DocmostMCP.TestClient.put_permission_info("p1", %{
-      "hasDirectRestriction" => true,
-      "hasInheritedRestriction" => true,
+    DocmostMCP.TestClient.put_access("p1", %{
+      "restriction" => "direct",
       "canAccess" => true,
       "canEdit" => true,
-      "permissions" => [%{"id" => user, "type" => "user", "role" => "reader"}]
+      "grants" => [%{"id" => "g-1", "type" => "user", "principalId" => user, "role" => "reader"}]
     })
 
     assert {:ok, yaml, _} = Backend.read("/engineering/start.meta", ctx)
@@ -179,25 +197,25 @@ defmodule DocmostMCP.VFSTest do
                ctx
              )
 
-    assert {:remove_permission, %{pageId: "p1", userIds: [^user]}} =
-             Enum.find(DocmostMCP.TestClient.calls(), &match?({:remove_permission, _}, &1))
+    assert {:remove_grant, "p1", "g-1"} in DocmostMCP.TestClient.calls()
   end
 
   test "next cursor is read from Docmost data meta shape" do
     assert "next" == DocmostMCP.Normalize.next_cursor(%{"meta" => %{"nextCursor" => "next"}})
   end
 
-  test "grouped permissions expand by principal and role changes use update", %{ctx: ctx} do
+  test "grouped permissions expand by principal, batch adds and grant-id updates", %{ctx: ctx} do
     user1 = "11111111-1111-4111-8111-111111111111"
     user2 = "22222222-2222-4222-8222-222222222222"
     group = "33333333-3333-4333-8333-333333333333"
 
-    DocmostMCP.TestClient.put_permission_info("p1", %{
-      "hasDirectRestriction" => true,
-      "hasInheritedRestriction" => false,
+    DocmostMCP.TestClient.put_access("p1", %{
+      "restriction" => "direct",
       "canAccess" => true,
       "canEdit" => true,
-      "permissions" => [%{"id" => user1, "type" => "user", "role" => "reader"}]
+      "grants" => [
+        %{"id" => "g-u1", "type" => "user", "principalId" => user1, "role" => "reader"}
+      ]
     })
 
     yaml = """
@@ -212,9 +230,19 @@ defmodule DocmostMCP.VFSTest do
     assert {:ok, _} = Backend.write("/engineering/start.meta", yaml, ctx)
     calls = DocmostMCP.TestClient.calls()
 
-    assert {:update_permission, %{pageId: "p1", role: "writer", userId: user1}} in calls
-    assert {:add_permission, %{pageId: "p1", role: "writer", userIds: [user2]}} in calls
-    assert {:add_permission, %{pageId: "p1", role: "reader", groupIds: [group]}} in calls
-    refute Enum.any?(calls, &match?({:remove_permission, _}, &1))
+    assert {:update_grant, "p1", "g-u1", "writer"} in calls
+
+    assert Enum.any?(calls, fn call ->
+             match?(
+               {:add_grants, "p1",
+                [
+                  %{type: "user", principalId: ^user2, role: "writer"},
+                  %{type: "group", principalId: ^group, role: "reader"}
+                ]},
+               call
+             )
+           end)
+
+    refute Enum.any?(calls, &match?({:remove_grant, _, _}, &1))
   end
 end
