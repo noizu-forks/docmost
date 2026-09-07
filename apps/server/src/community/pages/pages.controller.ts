@@ -110,9 +110,11 @@ export class PagesController {
     const page = await this.pageService.create(user.id, workspace.id, {
       title: dto.title,
       content: dto.content,
-      format: dto.format,
       parentPageId: dto.parentId,
       spaceId,
+      // core's create() only processes content when a format is present;
+      // the v1 contract is markdown-first (principle 5), so default it.
+      format: dto.format ?? 'markdown',
     } as any);
 
     return this.formatContent(page, dto.format);
