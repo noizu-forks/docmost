@@ -67,7 +67,23 @@ defmodule DocmostMCP.Client.Req do
   @impl true
   def delete_share(id), do: request(:post, "/shares/delete", %{shareId: id})
   @impl true
-  def permission_info(id), do: request(:post, "/pages/permission-info", %{pageId: id})
+  # Core has no /pages/permission-info in this fork base; the v1 access
+  # surface carries the same signal (restriction: none|direct|inherited).
+  def permission_info(id) do
+    case request(:get, "/v1/pages/#{id}/access", nil) do
+      {:ok, %{"restriction" => restriction} = access} when is_binary(restriction) ->
+        {:ok,
+         access
+         |> Map.put("hasDirectRestriction", restriction == "direct")
+         |> Map.put("hasInheritedRestriction", restriction == "inherited")}
+
+      {:ok, other} ->
+        {:ok, other}
+
+      error ->
+        error
+    end
+  end
   @impl true
   def list_permissions(id, cursor),
     do: request(:post, "/pages/permissions", compact(%{pageId: id, limit: 100, cursor: cursor}))
