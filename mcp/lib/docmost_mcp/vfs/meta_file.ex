@@ -114,7 +114,8 @@ defmodule DocmostMCP.VFS.MetaFile do
         {:error, :eacces}
 
       desired == "private" ->
-        result(Client.delete_share(before.share_id))
+        # v1 share delete is page-addressed (shared: false)
+        result(Client.delete_share(Normalize.id(page)))
 
       desired == "public" and before.share == "private" ->
         result(
@@ -131,6 +132,8 @@ defmodule DocmostMCP.VFS.MetaFile do
       desired in [nil, "public"] ->
         result(
           Client.update_share(%{
+            # v1 share upsert is page-addressed; share_id no longer suffices
+            pageId: Normalize.id(page),
             shareId: before.share_id,
             includeSubPages: Map.get(doc, "include_sub_pages", before.include_sub_pages),
             searchIndexing: Map.get(doc, "search_indexing", before.search_indexing)

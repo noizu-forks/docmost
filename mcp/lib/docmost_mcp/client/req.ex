@@ -60,12 +60,32 @@ defmodule DocmostMCP.Client.Req do
 
   @impl true
   def get_share(id), do: request(:post, "/shares/for-page", %{pageId: id})
+  # The fork base has no core /shares/create|update|delete endpoints; the v1
+  # share upsert (PUT /v1/pages/:id/share, `shared: false` deletes) is the
+  # write surface.
   @impl true
-  def create_share(attrs), do: request(:post, "/shares/create", attrs)
+  def create_share(%{pageId: page_id} = attrs), do: put_share(page_id, true, attrs)
+
   @impl true
-  def update_share(attrs), do: request(:post, "/shares/update", attrs)
+  def update_share(%{pageId: page_id} = attrs), do: put_share(page_id, true, attrs)
+
+  # Callers pass the page id — v1 has no share-id-addressed delete.
   @impl true
-  def delete_share(id), do: request(:post, "/shares/delete", %{shareId: id})
+  def delete_share(page_id), do: put_share(page_id, false, %{})
+
+  defp put_share(page_id, shared, attrs) do
+    body =
+      %{
+        "shared" => shared,
+        "includeSubPages" => value_of(attrs, :includeSubPages, "includeSubPages"),
+        "searchIndexing" => value_of(attrs, :searchIndexing, "searchIndexing")
+      }
+      |> Map.reject(fn {_k, v} -> is_nil(v) end)
+
+    request(:put, "/v1/pages/#{page_id}/share", body)
+  end
+
+  defp value_of(map, k1, k2), do: Map.get(map, k1) || Map.get(map, k2)
   @impl true
   # Core has no /pages/permission-info in this fork base; the v1 access
   # surface carries the same signal (restriction: none|direct|inherited).
@@ -88,25 +108,106 @@ defmodule DocmostMCP.Client.Req do
   # Core has no POST /pages/permissions here; grants come from the v1
   # access surface nested under the restriction summary.
   def list_permissions(id, cursor) do
-    qs = if cursor in [nil, ""], do: "", else: "?cursor=\#{URI.encode_www_form(cursor)}"
+    qs = if cursor in [nil, ""], do: "", else: "?cursor=#{URI.encode_www_form(cursor)}"
 
-    case request(:get, "/v1/pages/\#{id}/access\#{qs}", nil) do
-      {:ok, %{"grants" => grants}} -> {:ok, grants}
-      {:ok, _} -> {:ok, %{"data" => [], "meta" => %{"nextCursor" => nil}}}
-      error -> error
+    case request(:get, "/v1/pages/#{id}/access#{qs}", nil) do
+      {:ok, %{"grants" => grants}} ->
+        rows =
+          grants
+          |> unwrap()
+          |> case do
+            rows when is_list(rows) ->
+              Enum.map(rows, fn row ->
+                row
+                |> Map.put("grantId", row["id"])
+                |> Map.put("id", row["principalId"])
+              end)
+
+            _ ->
+              []
+          end
+
+        {:ok, %{"data" => rows, "meta" => %{"nextCursor" => nil}}}
+
+      {:ok, _} ->
+        {:ok, %{"data" => [], "meta" => %{"nextCursor" => nil}}}
+
+      error ->
+        error
     end
   end
 
   @impl true
-  def restrict_page(id), do: request(:post, "/pages/restrict", %{pageId: id})
+  def restrict_page(id),
+    do: request(:put, "/v1/pages/#{id}/access/restriction", %{"restricted" => true})
+
   @impl true
-  def remove_restriction(id), do: request(:post, "/pages/remove-restriction", %{pageId: id})
+  def remove_restriction(id),
+    do: request(:put, "/v1/pages/#{id}/access/restriction", %{"restricted" => false})
+
   @impl true
-  def add_permission(attrs), do: request(:post, "/pages/add-permission", attrs)
+  def add_permission(%{pageId: page_id, role: role} = attrs) do
+    grants =
+      grant_principals(attrs)
+      |> Enum.map(fn type -> %{"type" => type, "principalId" => grant_principal_id(attrs, type), "role" => role} end)
+
+    case grants do
+      [] -> {:ok, %{}}
+      grants -> request(:post, "/v1/pages/#{page_id}/access/grants", %{"grants" => grants})
+    end
+  end
+
   @impl true
-  def update_permission(attrs), do: request(:post, "/pages/update-permission", attrs)
+  def update_permission(%{pageId: page_id, role: role} = attrs) do
+    case find_grant(page_id, attrs) do
+      {:ok, grant} ->
+        request(:patch, "/v1/pages/#{page_id}/access/grants/#{grant["grantId"]}", %{"role" => role})
+
+      other ->
+        other
+    end
+  end
+
   @impl true
-  def remove_permission(attrs), do: request(:post, "/pages/remove-permission", attrs)
+  def remove_permission(%{pageId: page_id} = attrs) do
+    case find_grant(page_id, attrs) do
+      {:ok, grant} ->
+        request(:delete, "/v1/pages/#{page_id}/access/grants/#{grant["grantId"]}", nil)
+
+      other ->
+        other
+    end
+  end
+
+  defp grant_principals(attrs) do
+    user_ids = value_of(attrs, :userIds, "userIds") || []
+    group_ids = value_of(attrs, :groupIds, "groupIds") || []
+
+    Enum.map(user_ids, fn _ -> "user" end) ++ Enum.map(group_ids, fn _ -> "group" end)
+  end
+
+  defp grant_principal_id(attrs, "user"), do: (value_of(attrs, :userIds, "userIds") || []) |> List.first()
+  defp grant_principal_id(attrs, "group"), do: (value_of(attrs, :groupIds, "groupIds") || []) |> List.first()
+
+  defp find_grant(page_id, attrs) do
+    case list_permissions(page_id, nil) do
+      {:ok, grants} ->
+        rows = Normalize.list(grants)
+
+        principal_type = (value_of(attrs, :userIds, "userIds") && "user") || "group"
+
+        grant =
+          Enum.find(rows, fn row ->
+            Normalize.value(row, :type) == principal_type and
+              Normalize.value(row, :principalId) == grant_principal_id(attrs, principal_type)
+          end)
+
+        if grant, do: {:ok, grant}, else: {:ok, nil}
+
+      error ->
+        error
+    end
+  end
 
   defp request(method, path, body) do
     options =
