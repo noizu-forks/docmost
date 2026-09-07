@@ -245,7 +245,7 @@ defmodule DocmostMCP.VFS.MetaFile do
         next = Normalize.next_cursor(Normalize.value(raw, :grants) || raw)
 
         if next,
-          do: collect_access(id, next, grants, MapSet.put(seen, next)),
+          do: collect_access(id, next, grants, MapSet.put(seen, cursor)),
           else: {:ok, Map.put(raw, "grants", grants)}
       end
     end

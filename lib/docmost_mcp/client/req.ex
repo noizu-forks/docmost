@@ -87,7 +87,7 @@ defmodule DocmostMCP.Client.Req do
   defp get(path, params \\ nil) do
     params = if params, do: compact(params), else: %{}
 
-    if params == [],
+    if params == %{},
       do: request(:get, path, nil, []),
       else: request(:get, path, nil, params: params)
   end

@@ -4,9 +4,21 @@ defmodule DocmostMCP.TestClient do
   @behaviour DocmostMCP.ClientBehaviour
   use Agent
 
+  # Unlinked: the agent outlives the per-test ExUnit process, so the next
+  # setup never races a linked teardown (stop-then-restart is atomic here).
   def start do
-    if Process.whereis(__MODULE__), do: Agent.stop(__MODULE__)
-    Agent.start_link(fn -> seed() end, name: __MODULE__)
+    if pid = Process.whereis(__MODULE__) do
+      try do
+        Agent.stop(pid, :normal, :infinity)
+      catch
+        :exit, _ -> :ok
+      end
+    end
+
+    case Agent.start(fn -> seed() end, name: __MODULE__) do
+      {:ok, _} -> {:ok, Process.whereis(__MODULE__)}
+      {:error, {:already_started, _}} -> {:ok, Process.whereis(__MODULE__)}
+    end
   end
 
   def put_share(page, share),
