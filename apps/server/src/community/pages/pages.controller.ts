@@ -107,6 +107,10 @@ export class PagesController {
       }
     }
 
+    // the v1 contract is markdown-first (principle 5): default the stored
+    // format AND the response representation.
+    const format = dto.format ?? 'markdown';
+
     const page = await this.pageService.create(user.id, workspace.id, {
       title: dto.title,
       content: dto.content,
@@ -114,10 +118,10 @@ export class PagesController {
       spaceId,
       // core's create() only processes content when a format is present;
       // the v1 contract is markdown-first (principle 5), so default it.
-      format: dto.format ?? 'markdown',
+      format,
     } as any);
 
-    return this.formatContent(page, dto.format);
+    return this.formatContent(page, format);
   }
 
   // --- page-scoped ---
@@ -153,9 +157,11 @@ export class PagesController {
       .map((s) => s.trim())
       .filter(Boolean);
 
-    if (query.format && query.format !== 'json' && page.content) {
+    // markdown-first (principle 5): explicit ?format=opt-in, default markdown.
+    const format = query.format ?? 'markdown';
+    if (format !== 'json' && page.content) {
       result.content =
-        query.format === 'html'
+        format === 'html'
           ? jsonToHtml(page.content)
           : jsonToMarkdown(page.content);
     }

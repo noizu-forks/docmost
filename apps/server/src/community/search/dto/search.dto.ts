@@ -3,7 +3,8 @@ import { IsNumber, IsOptional, IsString, Max, Min } from 'class-validator';
 
 /**
  * GET /v1/search?q= — `q` maps onto core SearchDTO.query. limit is capped
- * like core's default of 25; there is no cursor (meta.nextCursor is null).
+ * like core's default of 25; cursor is an opaque offset token (core search
+ * is rank/limit/offset only — see SearchController).
  */
 export class V1SearchDto {
   @IsOptional()
@@ -20,4 +21,8 @@ export class V1SearchDto {
   @Min(1)
   @Max(100)
   limit?: number;
+
+  @IsOptional()
+  @IsString()
+  cursor?: string;
 }

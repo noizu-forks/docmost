@@ -21,6 +21,8 @@ import { AuthWorkspace } from '../../common/decorators/auth-workspace.decorator'
 import { Page, User, Workspace } from '@docmost/db/types/entity.types';
 import { PageRepo } from '@docmost/db/repos/page/page.repo';
 import { PagePermissionRepo } from '@docmost/db/repos/page/page-permission.repo';
+import { UserRepo } from '@docmost/db/repos/user/user.repo';
+import { GroupRepo } from '@docmost/db/repos/group/group.repo';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { PageAccessService } from '../../core/page/page-access/page-access.service';
 import { PageAccessLevel, PagePermissionRole } from '../../common/helpers/types/permission';
@@ -32,6 +34,7 @@ import {
   PatchV1GrantDto,
   PostV1GrantsDto,
   PutV1RestrictionDto,
+  V1GrantInputDto,
 } from './dto/page-access.dto';
 import { SkipTransform } from '../../common/decorators/skip-transform.decorator';
 
@@ -49,6 +52,8 @@ export class PageAccessController {
     private readonly pagePermissionRepo: PagePermissionRepo,
     private readonly pageAccessService: PageAccessService,
     private readonly grantsMapper: GrantsMapper,
+    private readonly userRepo: UserRepo,
+    private readonly groupRepo: GroupRepo,
   ) {}
 
   @SkipTransform()
@@ -138,12 +143,35 @@ export class PageAccessController {
     const page = await this.findEditablePageOrThrow(pageId, user);
     const pageAccess = await this.ensurePageAccess(page, user, workspace);
 
+    // Reject unknown principals with a clean 4xx instead of a raw FK 500.
+    await this.validatePrincipals(dto.grants, workspace.id);
+
     await this.pagePermissionRepo.insertPagePermissions(
       GrantsMapper.toGrantRows(pageAccess.id, dto.grants, user.id),
     );
 
     // Return the full grant set for the page.
     return this.listAllGrants(pageAccess.id);
+  }
+
+  /** Every grant principal must exist in this workspace (clean 400 otherwise). */
+  private async validatePrincipals(
+    grants: V1GrantInputDto[],
+    workspaceId: string,
+  ) {
+    const missing: string[] = [];
+    for (const grant of grants) {
+      const exists =
+        grant.type === 'user'
+          ? Boolean(await this.userRepo.findById(grant.principalId, workspaceId))
+          : Boolean(await this.groupRepo.findById(grant.principalId, workspaceId));
+      if (!exists) missing.push(grant.principalId);
+    }
+    if (missing.length > 0) {
+      throw new BadRequestException(
+        `Unknown ${missing.length === 1 ? 'principal' : 'principals'}: ${missing.join(', ')}`,
+      );
+    }
   }
 
   @SkipTransform()

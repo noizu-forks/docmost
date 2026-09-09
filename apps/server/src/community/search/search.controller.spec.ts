@@ -39,7 +39,8 @@ describe('SearchController (v1)', () => {
     );
 
     expect(searchService.searchPage).toHaveBeenCalledWith(
-      { query: 'hello', spaceId: undefined, limit: 10 },
+      // limit+1 fetch is the hasNext-detection read
+      { query: 'hello', spaceId: undefined, limit: 11, offset: 0 },
       { userId: 'user_1', workspaceId: 'ws_1' },
     );
     expect(result.data).toEqual([
