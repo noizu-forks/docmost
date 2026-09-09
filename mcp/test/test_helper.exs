@@ -1,0 +1,5 @@
+ExUnit.start()
+Application.put_env(:docmost_mcp, :start_stdio, false)
+Application.put_env(:docmost_mcp, :client, DocmostMCP.TestClient)
+Application.put_env(:docmost_mcp, :api_url, "https://docs.example.com")
+Application.put_env(:docmost_mcp, :writes, true)

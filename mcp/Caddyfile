@@ -1,0 +1,21 @@
+# Edge proxy for the MCP-enabled docmost stack
+# (docker compose -f docker-compose.yml -f docker-compose.mcp.yml up).
+#
+# {site}/mcp*   → mcp:4000  (Elixir MCP service, streamable HTTP)
+# everything else → docmost:3000 (upstream docmost app)
+#
+# Streaming notes: Caddy proxies WebSocket upgrades natively, and
+# `flush_interval -1` disables response buffering so MCP SSE streams
+# flush event-by-event. Paths are passed through unrewritten — the MCP
+# transport is mounted at exactly /mcp inside the mcp service.
+:80 {
+	handle /mcp* {
+		reverse_proxy mcp:4000 {
+			flush_interval -1
+		}
+	}
+
+	handle {
+		reverse_proxy docmost:3000
+	}
+}
