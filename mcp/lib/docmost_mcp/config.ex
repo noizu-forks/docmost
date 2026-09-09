@@ -12,7 +12,7 @@ defmodule DocmostMCP.Config do
       _ -> "https://docmost.noizu.com"
     end
     |> String.trim_trailing("/")
-    |> then(&if(String.ends_with?(&1, "/api"), do: &1, else: &1 <> "/api"))
+    |> then(&if(String.ends_with?(&1, "/api/v1"), do: &1, else: &1 <> "/api/v1"))
   end
 
   def api_key do

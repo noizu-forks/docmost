@@ -371,7 +371,7 @@ defmodule DocmostMCP.VFS.Backend do
         next = Normalize.next_cursor(raw)
 
         if next,
-          do: collect_spaces(next, acc ++ rows, MapSet.put(seen, next)),
+          do: collect_spaces(next, acc ++ rows, MapSet.put(seen, cursor)),
           else: {:ok, acc ++ rows}
 
       {:error, error} ->
@@ -392,7 +392,7 @@ defmodule DocmostMCP.VFS.Backend do
         next = Normalize.next_cursor(raw)
 
         if next,
-          do: collect_page_tree(space, next, acc ++ rows, MapSet.put(seen, next)),
+          do: collect_page_tree(space, next, acc ++ rows, MapSet.put(seen, cursor)),
           else: hydrate_children(acc ++ rows, MapSet.new())
 
       {:error, error} ->
@@ -431,7 +431,7 @@ defmodule DocmostMCP.VFS.Backend do
           next = Normalize.next_cursor(raw)
 
           if next,
-            do: collect_children(page, next, acc ++ rows, MapSet.put(cursors, next)),
+            do: collect_children(page, next, acc ++ rows, MapSet.put(cursors, cursor)),
             else: {:ok, acc ++ rows}
 
         {:error, error} ->
