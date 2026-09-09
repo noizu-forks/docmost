@@ -103,12 +103,28 @@ defmodule DocmostMCP.Tools.Core do
     Auth.assume(ctx)
     write(fn ->
       with {:ok, page} <- Client.get_page(args.page_id),
-           yaml =
-             "share: #{args.share}\ninclude_sub_pages: #{args.include_sub_pages}\nsearch_indexing: #{args.search_indexing}\n",
+           # Only pass the settings the caller actually provided: the meta-file
+           # guard rejects `share: private` combined with either key, so always
+           # emitting the schema defaults would make every private toggle fail.
+           yaml = share_yaml(args),
            {:ok, meta} <- MetaFile.apply(page, yaml) do
         {:ok, MetaFile.encode(meta)}
       end
     end)
+  end
+
+  @doc "Build the meta-file YAML for docmost_page_share from the tool args."
+  def share_yaml(args) do
+    ([{"share", to_string(args.share)}] ++
+       Enum.map([:include_sub_pages, :search_indexing], fn key ->
+         case Map.fetch(args, key) do
+           {:ok, value} -> {Atom.to_string(key), value}
+           :error -> nil
+         end
+       end))
+    |> Enum.reject(&is_nil/1)
+    |> Enum.map_join("\n", fn {k, v} -> "#{k}: #{v}" end)
+    |> Kernel.<>("\n")
   end
 
   defp write(fun) do
