@@ -52,14 +52,32 @@ describe('PageAccessController (v1)', () => {
         { action: 'edit', subject: 'page' },
       ]);
 
+    const userRepo = {
+      findById: jest.fn().mockResolvedValue({ id: 'user_x' }),
+      ...overrides.userRepo,
+    };
+    const groupRepo = {
+      findById: jest.fn().mockResolvedValue({ id: 'group_1' }),
+      ...overrides.groupRepo,
+    };
+
     const controller = new PageAccessController(
       pageRepo,
       pagePermissionRepo,
       pageAccessService,
       grantsMapper,
+      userRepo,
+      groupRepo,
     );
 
-    return { controller, pagePermissionRepo, pageAccessService, grantsMapper };
+    return {
+      controller,
+      pagePermissionRepo,
+      pageAccessService,
+      grantsMapper,
+      userRepo,
+      groupRepo,
+    };
   }
 
   it('reports restriction, access and embedded grants', async () => {
@@ -189,6 +207,30 @@ describe('PageAccessController (v1)', () => {
     expect(result.data).toEqual([
       { id: 'grant_9', type: 'group', principalId: 'group_1', role: 'reader' },
     ]);
+  });
+
+  it('postGrants rejects unknown principals with a clean 400 (no FK 500)', async () => {
+    const { controller, pagePermissionRepo } = createController({
+      userRepo: { findById: jest.fn().mockResolvedValue(undefined) },
+      groupRepo: { findById: jest.fn().mockResolvedValue(undefined) },
+    });
+
+    await expect(
+      controller.postGrants(
+        'page_1',
+        {
+          grants: [
+            { type: 'user', principalId: '00000000-0000-0000-0000-000000000000', role: 'reader' },
+          ],
+        } as any,
+        user,
+        workspace,
+      ),
+    ).rejects.toMatchObject({
+      constructor: BadRequestException,
+      message: expect.stringContaining('Unknown principal'),
+    });
+    expect(pagePermissionRepo.insertPagePermissions).not.toHaveBeenCalled();
   });
 
   it('PATCH grant updates the role by stable grant id', async () => {
