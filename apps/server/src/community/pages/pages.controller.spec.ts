@@ -136,6 +136,54 @@ describe('PagesController (v1)', () => {
     );
   });
 
+  it('create response includes content, markdown-formatted (principle 5)', async () => {
+    const withContent = { ...page, content: { type: 'doc' } };
+    const { controller, pageRepo } = createController({
+      pageRepo: {
+        findById: jest.fn().mockResolvedValue(withContent),
+      },
+    });
+
+    const result = await controller.createPage(
+      'space_1',
+      { title: 'New', content: '# hi' },
+      user,
+      workspace,
+    );
+
+    // create() returns baseFields only — the controller must re-fetch with
+    // content so the client can encode the body straight off the response.
+    expect(pageRepo.findById).toHaveBeenCalledWith('page_1', {
+      includeSpace: true,
+      includeContent: true,
+    });
+    expect(result.content).toBe('# markdown');
+  });
+
+  it('PATCH response returns markdown-formatted content, not the JSON tree', async () => {
+    const { controller } = createController({
+      pageRepo: {
+        findById: jest.fn().mockResolvedValue({ ...page, content: { type: 'doc' } }),
+      },
+    });
+
+    const result = await controller.patchPage('page_1', { title: 'T' }, user);
+
+    expect(result.content).toBe('# markdown');
+  });
+
+  it('restore response returns markdown-formatted content', async () => {
+    const { controller } = createController({
+      pageRepo: {
+        findById: jest.fn().mockResolvedValue({ ...page, content: { type: 'doc' } }),
+      },
+    });
+
+    const result = await controller.restorePage('page_1', user, workspace);
+
+    expect(result.content).toBe('# markdown');
+  });
+
   it('404s when the parent page is unknown, deleted or in another space', async () => {
     for (const parent of [
       null,
