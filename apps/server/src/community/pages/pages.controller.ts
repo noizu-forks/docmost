@@ -111,7 +111,7 @@ export class PagesController {
     // format AND the response representation.
     const format = dto.format ?? 'markdown';
 
-    const page = await this.pageService.create(user.id, workspace.id, {
+    const created = await this.pageService.create(user.id, workspace.id, {
       title: dto.title,
       content: dto.content,
       parentPageId: dto.parentId,
@@ -121,6 +121,13 @@ export class PagesController {
       format,
     } as any);
 
+    // insertPage() returns baseFields only — re-fetch so the create
+    // response carries content in the same shape as GET (the v1 client
+    // encodes this response directly).
+    const page = await this.pageRepo.findById(created.id, {
+      includeSpace: true,
+      includeContent: true,
+    });
     return this.formatContent(page, format);
   }
 
@@ -264,16 +271,22 @@ export class PagesController {
         } as any,
         page,
       );
-      return this.pageRepo.findById(pageId, {
-        includeSpace: true,
-        includeContent: true,
-      });
+      return this.formatContent(
+        await this.pageRepo.findById(pageId, {
+          includeSpace: true,
+          includeContent: true,
+        }),
+        'markdown',
+      );
     }
 
-    return this.pageRepo.findById(pageId, {
-      includeSpace: true,
-      includeContent: true,
-    });
+    return this.formatContent(
+      await this.pageRepo.findById(pageId, {
+        includeSpace: true,
+        includeContent: true,
+      }),
+      'markdown',
+    );
   }
 
   @HttpCode(HttpStatus.NO_CONTENT)
@@ -327,10 +340,13 @@ export class PagesController {
 
     await this.pageRepo.restorePage(pageId, workspace.id);
 
-    return this.pageRepo.findById(pageId, {
-      includeSpace: true,
-      includeContent: true,
-    });
+    return this.formatContent(
+      await this.pageRepo.findById(pageId, {
+        includeSpace: true,
+        includeContent: true,
+      }),
+      'markdown',
+    );
   }
 
   private async findPageOrThrow(pageId: string): Promise<Page> {
