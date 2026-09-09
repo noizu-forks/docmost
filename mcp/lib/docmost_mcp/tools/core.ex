@@ -96,8 +96,8 @@ defmodule DocmostMCP.Tools.Core do
        input: [
          page_id: [type: :string, required: true],
          share: [type: :enum, values: [:public, :private], required: true],
-         include_sub_pages: [type: :boolean, default: false],
-         search_indexing: [type: :boolean, default: false]
+         include_sub_pages: [type: :boolean],
+         search_indexing: [type: :boolean]
        ]
   def page_share(args, ctx) do
     Auth.assume(ctx)
