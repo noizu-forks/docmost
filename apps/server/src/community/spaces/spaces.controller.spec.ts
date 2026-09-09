@@ -1,4 +1,4 @@
-import { ForbiddenException } from '@nestjs/common';
+import { ForbiddenException, NotFoundException } from '@nestjs/common';
 import { createMockAbilityFactory } from '../test-helpers/casl.mock';
 import { SpacesController } from './spaces.controller';
 
@@ -42,8 +42,8 @@ describe('SpacesController (v1)', () => {
 
     const controller = new SpacesController(
       overrides.spaces?.spaceService ?? spaceService,
-      spaceMemberService,
-      spaceMemberRepo,
+      overrides.spaces?.spaceMemberService ?? spaceMemberService,
+      overrides.spaces?.spaceMemberRepo ?? spaceMemberRepo,
       abilities.spaceAbility,
       abilities.workspaceAbility,
     );
@@ -116,5 +116,62 @@ describe('SpacesController (v1)', () => {
     await expect(
       controller.getSpace('space_1', user, workspace),
     ).rejects.toThrow(ForbiddenException);
+  });
+
+  it('404s on an unknown space', async () => {
+    const { controller } = createController({
+      spaces: {
+        spaceService: {
+          getSpaceInfo: jest.fn().mockResolvedValue(null),
+          createSpace: jest.fn(),
+          updateSpace: jest.fn(),
+        },
+      },
+    });
+
+    await expect(
+      controller.getSpace('space_x', user, workspace),
+    ).rejects.toThrow('Space not found');
+  });
+
+  it('skips role lookup for an empty space list', async () => {
+    const { controller, spaceMemberRepo } = createController({
+      spaces: {
+        spaceMemberService: {
+          getUserSpaces: jest
+            .fn()
+            .mockResolvedValue({ items: [], meta: { hasNextPage: false } }),
+        },
+      },
+    });
+
+    const result = await controller.getSpaces({ limit: 10 }, user);
+
+    expect(result.data).toEqual([]);
+    expect(spaceMemberRepo.getUserRolesForSpaces).not.toHaveBeenCalled();
+  });
+
+  it('tolerates spaces without membership role rows', async () => {
+    const { controller } = createController({
+      spaces: {
+        spaceMemberService: {
+          getUserSpaces: jest.fn().mockResolvedValue({
+            items: [{ id: 'space_1' }, { id: 'space_2' }],
+            meta: { hasNextPage: false },
+          }),
+        },
+        spaceMemberRepo: {
+          getUserRolesForSpaces: jest
+            .fn()
+            .mockResolvedValue([{ spaceId: 'space_2', role: 'writer' }]),
+          getUserSpaceRoles: jest.fn().mockResolvedValue([]),
+        },
+      },
+    });
+
+    const result = await controller.getSpaces({ limit: 10 }, user);
+
+    expect((result.data[0] as any).membership.role).toBeUndefined();
+    expect((result.data[1] as any).membership.role).toBe('writer');
   });
 });

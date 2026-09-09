@@ -1,4 +1,4 @@
-import { ForbiddenException } from '@nestjs/common';
+import { ForbiddenException, NotFoundException } from '@nestjs/common';
 import { createMockAbilityFactory } from '../test-helpers/casl.mock';
 import { SharesController } from './shares.controller';
 
@@ -159,6 +159,49 @@ describe('SharesController (v1)', () => {
 
     await expect(
       controller.putShare('page_1', { shared: true }, user, workspace),
-    ).rejects.toThrow(ForbiddenException);
+    ).rejects.toThrow('Cannot share a restricted page');
+  });
+
+  it('404s on an unknown or cross-workspace page', async () => {
+    const missing = createController({
+      pageRepo: { findById: jest.fn().mockResolvedValue(null) },
+    });
+    await expect(
+      missing.controller.putShare('page_x', { shared: true }, user, workspace),
+    ).rejects.toThrow(NotFoundException);
+
+    const foreign = createController({
+      pageRepo: {
+        findById: jest.fn().mockResolvedValue({ ...page, workspaceId: 'ws_other' }),
+      },
+    });
+    await expect(
+      foreign.controller.putShare('page_1', { shared: true }, user, workspace),
+    ).rejects.toThrow('Page not found');
+  });
+
+  it('forbids sharing when public sharing is disabled', async () => {
+    const { controller, shareService } = createController({
+      shareService: { isSharingAllowed: jest.fn().mockResolvedValue(false) },
+    });
+
+    await expect(
+      controller.putShare('page_1', { shared: true }, user, workspace),
+    ).rejects.toThrow('Public sharing is disabled');
+    expect(shareService.createShare).not.toHaveBeenCalled();
+  });
+
+  it('no-ops PUT {shared:false} when nothing is shared', async () => {
+    const { controller, shareRepo } = createController();
+
+    const result = await controller.putShare(
+      'page_1',
+      { shared: false },
+      user,
+      workspace,
+    );
+
+    expect(shareRepo.deleteShare).not.toHaveBeenCalled();
+    expect(result).toEqual({ shared: false });
   });
 });
