@@ -1,0 +1,147 @@
+import {
+  BadRequestException,
+  Injectable,
+  Logger,
+  UnauthorizedException,
+} from '@nestjs/common';
+import { InjectKysely } from 'nestjs-kysely';
+import { KyselyDB } from '@docmost/db/types/kysely.types';
+import {
+  ApiKey,
+  InsertableApiKey,
+  User,
+  Workspace,
+} from '@docmost/db/types/entity.types';
+import { executeWithCursorPagination } from '@docmost/db/pagination/cursor-pagination';
+import { CursorPaginationResult } from '@docmost/db/pagination/cursor-pagination';
+import { PaginationOptions } from '@docmost/db/pagination/pagination-options';
+import { UserRepo } from '@docmost/db/repos/user/user.repo';
+import { WorkspaceRepo } from '@docmost/db/repos/workspace/workspace.repo';
+import { isUserDisabled } from '../../common/helpers';
+import { JwtApiKeyPayload } from '../../core/auth/dto/jwt-payload';
+import { TokenService } from '../../core/auth/services/token.service';
+import { CreateApiKeyDto } from './dto/api-key.dto';
+
+/**
+ * Default API key lifetime. The global JWT expiry (JWT_TOKEN_EXPIRES_IN)
+ * must NOT govern API keys — without an explicit expiresIn a minted key
+ * would silently stop working when regular tokens expire.
+ */
+export const API_KEY_DEFAULT_EXPIRES_IN = '10y' as const;
+
+@Injectable()
+export class ApiKeyService {
+  private logger = new Logger('ApiKeyService');
+
+  constructor(
+    @InjectKysely() private readonly db: KyselyDB,
+    private readonly tokenService: TokenService,
+    private readonly userRepo: UserRepo,
+    private readonly workspaceRepo: WorkspaceRepo,
+  ) {}
+
+  async createApiKey(
+    createApiKeyDto: CreateApiKeyDto,
+    user: User,
+    workspaceId: string,
+  ): Promise<InsertableApiKey & { token: string }> {
+    const apiKey = await this.db
+      .insertInto('apiKeys')
+      .values({
+        name: createApiKeyDto.name,
+        creatorId: user.id,
+        workspaceId,
+      })
+      .returningAll()
+      .executeTakeFirst();
+
+    if (!apiKey) {
+      throw new BadRequestException('Failed to create API key');
+    }
+
+    const token = await this.tokenService.generateApiToken({
+      apiKeyId: apiKey.id,
+      user,
+      workspaceId,
+      expiresIn:
+        (createApiKeyDto.expiresIn as any) ?? API_KEY_DEFAULT_EXPIRES_IN,
+    });
+
+    // The raw token is only ever returned on mint; it is not persisted.
+    return {
+      id: apiKey.id,
+      name: apiKey.name,
+      createdAt: apiKey.createdAt,
+      token,
+    } as any;
+  }
+
+  async listApiKeys(
+    workspaceId: string,
+    pagination: PaginationOptions,
+  ): Promise<CursorPaginationResult<ApiKey>> {
+    const query = this.db
+      .selectFrom('apiKeys')
+      .selectAll()
+      .where('workspaceId', '=', workspaceId)
+      .where('deletedAt', 'is', null);
+
+    // api_keys.id is gen_uuid_v7 (time-ordered), so id-desc = newest-first.
+    return executeWithCursorPagination(query, {
+      perPage: pagination.limit,
+      cursor: pagination.cursor,
+      fields: [{ expression: 'id', direction: 'desc' }],
+      parseCursor: (cursor) => ({ id: cursor.id }),
+    } as any);
+  }
+
+  /** Idempotent: deleting an unknown or already-revoked key is a no-op (204). */
+  async revokeApiKey(id: string, workspaceId: string): Promise<void> {
+    await this.db
+      .updateTable('apiKeys')
+      .set({ deletedAt: new Date(), updatedAt: new Date() })
+      .where('id', '=', id)
+      .where('workspaceId', '=', workspaceId)
+      .where('deletedAt', 'is', null)
+      .execute();
+  }
+
+  async validateApiKey(payload: JwtApiKeyPayload): Promise<{
+    user: User;
+    workspace: Workspace;
+  }> {
+    const apiKey = await this.db
+      .selectFrom('apiKeys')
+      .selectAll()
+      .where('id', '=', payload.apiKeyId)
+      .executeTakeFirst();
+
+    if (!apiKey || apiKey.deletedAt !== null) {
+      throw new UnauthorizedException('API key not found');
+    }
+
+    if (apiKey.expiresAt && apiKey.expiresAt < new Date()) {
+      throw new UnauthorizedException('API key expired');
+    }
+
+    const workspace = await this.workspaceRepo.findById(payload.workspaceId);
+    if (!workspace) {
+      throw new UnauthorizedException();
+    }
+
+    const user = await this.userRepo.findById(payload.sub, payload.workspaceId);
+    if (!user || isUserDisabled(user)) {
+      throw new UnauthorizedException();
+    }
+
+    // Fire-and-forget: never block or fail auth on last-used bookkeeping.
+    this.db
+      .updateTable('apiKeys')
+      .set({ lastUsedAt: new Date() })
+      .where('id', '=', apiKey.id)
+      .execute()
+      .catch((err) => this.logger.warn(`Failed to update lastUsedAt: ${err}`));
+
+    return { user, workspace };
+  }
+}

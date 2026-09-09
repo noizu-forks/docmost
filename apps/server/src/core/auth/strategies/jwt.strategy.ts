@@ -15,6 +15,7 @@ import { SessionActivityService } from '../../session/session-activity.service';
 import { FastifyRequest } from 'fastify';
 import { extractBearerTokenFromHeader, isUserDisabled } from '../../../common/helpers';
 import { ModuleRef } from '@nestjs/core';
+import { ApiKeyService as CommunityApiKeyService } from '../../../community/api-key/api-key.service';
 
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
@@ -118,7 +119,22 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
       return ApiKeyService.validateApiKey(payload);
     }
 
-    throw new UnauthorizedException('Enterprise API Key module missing');
+    // Community fallback: AGPL API-key support when no enterprise module
+    // is bundled in this build.
+    try {
+      const communityApiKeyService = this.moduleRef.get(
+        CommunityApiKeyService,
+        { strict: false },
+      );
+
+      return communityApiKeyService.validateApiKey(payload);
+    } catch (err) {
+      this.logger.debug(
+        'Community API Key module not available in this build',
+      );
+    }
+
+    throw new UnauthorizedException('API Key module missing');
   }
 
   private async validateOAuthToken(req: any, payload: JwtOAuthPayload) {
