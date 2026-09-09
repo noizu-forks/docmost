@@ -43,8 +43,7 @@ defmodule DocmostMCP.Tools.Core do
         spaceId: args.space_id,
         title: args.title,
         content: args.content,
-        parentPageId: args.parent_page_id,
-        format: "markdown"
+        parentPageId: args.parent_page_id
       })
     end)
   end
@@ -62,7 +61,6 @@ defmodule DocmostMCP.Tools.Core do
         Client.update_page(args.page_id, %{
           content: args.content,
           title: args.title,
-          format: "markdown",
           operation: "replace"
         })
       end)

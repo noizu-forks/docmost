@@ -4,16 +4,28 @@ defmodule DocmostMCP.TestClient do
   @behaviour DocmostMCP.ClientBehaviour
   use Agent
 
+  # Unlinked: the agent outlives the per-test ExUnit process, so the next
+  # setup never races a linked teardown (stop-then-restart is atomic here).
   def start do
-    if Process.whereis(__MODULE__), do: Agent.stop(__MODULE__)
-    Agent.start_link(fn -> seed() end, name: __MODULE__)
+    if pid = Process.whereis(__MODULE__) do
+      try do
+        Agent.stop(pid, :normal, :infinity)
+      catch
+        :exit, _ -> :ok
+      end
+    end
+
+    case Agent.start(fn -> seed() end, name: __MODULE__) do
+      {:ok, _} -> {:ok, Process.whereis(__MODULE__)}
+      {:error, {:already_started, _}} -> {:ok, Process.whereis(__MODULE__)}
+    end
   end
 
-  def put_share(page, shares),
-    do: Agent.update(__MODULE__, &%{&1 | shares: Map.put(&1.shares, page, shares)})
+  def put_share(page, share),
+    do: Agent.update(__MODULE__, &%{&1 | shares: Map.put(&1.shares, page, share)})
 
-  def put_permission_info(page, info),
-    do: Agent.update(__MODULE__, &%{&1 | permissions: Map.put(&1.permissions, page, info)})
+  def put_access(page, access),
+    do: Agent.update(__MODULE__, &%{&1 | permissions: Map.put(&1.permissions, page, access)})
 
   def put_pages(pages), do: Agent.update(__MODULE__, &%{&1 | pages: pages})
   def calls, do: Agent.get(__MODULE__, &Enum.reverse(&1.calls))
@@ -32,33 +44,31 @@ defmodule DocmostMCP.TestClient do
         }
       ],
       shares: %{},
-      permissions: %{
-        "p1" => %{
-          "hasDirectRestriction" => false,
-          "hasInheritedRestriction" => false,
-          "canAccess" => true,
-          "canEdit" => true,
-          "permissions" => []
-        }
-      },
+      permissions: %{"p1" => default_access()},
       calls: []
     }
   end
 
-  def list_spaces(_cursor), do: {:ok, Agent.get(__MODULE__, & &1.spaces)}
+  defp default_access do
+    %{"restriction" => "none", "canAccess" => true, "canEdit" => true, "grants" => []}
+  end
+
+  def list_spaces(_cursor),
+    do: {:ok, %{"data" => Agent.get(__MODULE__, & &1.spaces), "meta" => %{}}}
+
   def get_space(id), do: fetch(:spaces, id)
   def create_space(attrs), do: {:ok, Map.put(stringify(attrs), "id", "s-new")}
 
   def list_pages(space, _cursor) do
     record({:list_pages, space})
     pages = Agent.get(__MODULE__, &Enum.filter(&1.pages, fn p -> p["spaceId"] == space end))
-    {:ok, %{"pages" => Enum.filter(pages, &is_nil(&1["parentPageId"])), "meta" => %{}}}
+    {:ok, %{"data" => Enum.filter(pages, &is_nil(&1["parentPageId"])), "meta" => %{}}}
   end
 
   def list_child_pages(page, _cursor) do
     record({:list_child_pages, page})
     pages = Agent.get(__MODULE__, &Enum.filter(&1.pages, fn p -> p["parentPageId"] == page end))
-    {:ok, %{"pages" => pages, "meta" => %{}}}
+    {:ok, %{"data" => pages, "meta" => %{}}}
   end
 
   def get_page(id), do: fetch(:pages, id)
@@ -91,86 +101,100 @@ defmodule DocmostMCP.TestClient do
     :ok
   end
 
-  def get_share(id), do: {:ok, Agent.get(__MODULE__, &Map.get(&1.shares, id, []))}
+  def get_share(id),
+    do: {:ok, Agent.get(__MODULE__, &Map.get(&1.shares, id, %{"shared" => false}))}
 
-  def create_share(attrs) do
-    share = %{
-      "id" => "sh1",
-      "key" => "public-key",
-      "level" => 0,
-      "includeSubPages" => attrs[:includeSubPages],
-      "searchIndexing" => attrs[:searchIndexing]
-    }
+  # v1 upsert: shared:false removes; shared:true creates/updates in place,
+  # preserving the share id/key/publicUrl the server owns.
+  def update_share(page_id, attrs) do
+    record({:update_share, page_id, attrs})
 
-    Agent.update(__MODULE__, &%{&1 | shares: Map.put(&1.shares, attrs[:pageId], [share])})
+    share =
+      Agent.get_and_update(__MODULE__, fn state ->
+        existing = Map.get(state.shares, page_id, %{})
+
+        if stringify(attrs)["shared"] == false do
+          {existing, %{state | shares: Map.delete(state.shares, page_id)}}
+        else
+          share =
+            Map.merge(existing, %{
+              "id" => existing["id"] || "sh1",
+              "key" => existing["key"] || "public-key",
+              "level" => 0,
+              "shared" => true,
+              "includeSubPages" => attrs[:includeSubPages] || false,
+              "searchIndexing" => attrs[:searchIndexing] || false
+            })
+
+          {share, %{state | shares: Map.put(state.shares, page_id, share)}}
+        end
+      end)
+
     {:ok, share}
   end
 
-  def update_share(attrs) do
-    Agent.update(__MODULE__, fn state ->
-      shares =
-        Map.new(state.shares, fn {page, rows} ->
-          {page,
-           Enum.map(rows, fn row ->
-             if row["id"] == attrs[:shareId],
-               do:
-                 Map.merge(row, %{
-                   "includeSubPages" => attrs[:includeSubPages],
-                   "searchIndexing" => attrs[:searchIndexing]
-                 }),
-               else: row
-           end)}
-        end)
+  def get_access(id, _cursor),
+    do: {:ok, Agent.get(__MODULE__, &Map.get(&1.permissions, id, default_access()))}
 
-      %{state | shares: shares}
+  def set_restriction(id, restricted) do
+    Agent.update(__MODULE__, fn state ->
+      access =
+        Map.put(
+          Map.get(state.permissions, id, default_access()),
+          "restriction",
+          if(restricted, do: "direct", else: "none")
+        )
+
+      %{state | permissions: Map.put(state.permissions, id, access)}
     end)
 
-    {:ok, stringify(attrs)}
+    {:ok, %{}}
   end
 
-  def delete_share(id) do
-    Agent.update(
-      __MODULE__,
-      &%{
-        &1
-        | shares:
-            Map.new(&1.shares, fn {page, shares} ->
-              {page, Enum.reject(shares, fn s -> s["id"] == id end)}
-            end)
-      }
-    )
+  def add_grants(page_id, grants) do
+    record({:add_grants, page_id, grants})
+
+    created =
+      Enum.map(grants, fn grant ->
+        %{
+          "id" => "g-" <> String.slice(to_string(grant.principalId), 0, 8),
+          "type" => to_string(grant.type),
+          "principalId" => grant.principalId,
+          "role" => grant.role
+        }
+      end)
+
+    Agent.update(__MODULE__, fn state ->
+      access = Map.get(state.permissions, page_id, default_access())
+      access = Map.update!(access, "grants", &(&1 ++ created))
+      %{state | permissions: Map.put(state.permissions, page_id, access)}
+    end)
+
+    {:ok, %{"data" => created, "meta" => %{}}}
+  end
+
+  def update_grant(page_id, grant_id, role) do
+    record({:update_grant, page_id, grant_id, role})
+
+    map_grants(page_id, fn grants ->
+      Enum.map(grants, &if(&1["id"] == grant_id, do: Map.put(&1, "role", role), else: &1))
+    end)
 
     {:ok, %{}}
   end
 
-  def permission_info(id),
-    do:
-      {:ok,
-       Agent.get(
-         __MODULE__,
-         &Map.get(&1.permissions, id, %{
-           "hasDirectRestriction" => false,
-           "hasInheritedRestriction" => false,
-           "canAccess" => true,
-           "canEdit" => true,
-           "permissions" => []
-         })
-       )}
-
-  def list_permissions(id, _cursor) do
-    permissions = Agent.get(__MODULE__, &(Map.get(&1.permissions, id, %{})["permissions"] || []))
-    {:ok, %{"permissions" => permissions, "meta" => %{}}}
+  def remove_grant(page_id, grant_id) do
+    record({:remove_grant, page_id, grant_id})
+    map_grants(page_id, &Enum.reject(&1, fn grant -> grant["id"] == grant_id end))
+    {:ok, %{}}
   end
 
-  def restrict_page(id), do: permission_update(id, true)
-  def remove_restriction(id), do: permission_update(id, false)
-  def add_permission(attrs), do: record_result({:add_permission, attrs})
-  def update_permission(attrs), do: record_result({:update_permission, attrs})
-  def remove_permission(attrs), do: record_result({:remove_permission, attrs})
-
-  defp permission_update(id, value) do
-    Agent.update(__MODULE__, &put_in(&1, [:permissions, id, "hasDirectRestriction"], value))
-    {:ok, %{}}
+  defp map_grants(page_id, fun) do
+    Agent.update(__MODULE__, fn state ->
+      access = Map.get(state.permissions, page_id, default_access())
+      access = Map.update!(access, "grants", fun)
+      %{state | permissions: Map.put(state.permissions, page_id, access)}
+    end)
   end
 
   defp fetch(key, id) do
@@ -183,11 +207,4 @@ defmodule DocmostMCP.TestClient do
   defp stringify(map), do: Map.new(map, fn {k, v} -> {to_string(k), v} end)
 
   defp record(call), do: Agent.update(__MODULE__, &%{&1 | calls: [call | &1.calls]})
-
-  defp record_result(call),
-    do:
-      (
-        record(call)
-        {:ok, %{}}
-      )
 end

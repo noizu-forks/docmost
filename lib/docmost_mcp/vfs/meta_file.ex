@@ -2,7 +2,7 @@ defmodule DocmostMCP.VFS.MetaFile do
   @moduledoc false
   alias DocmostMCP.{Client, Config, Error, Normalize}
   @write ~w(share include_sub_pages search_indexing access permissions permissions_mode)
-  @readonly ~w(id page_id url share_id share_level access_level effective_share effective_access)
+  @readonly ~w(id page_id url share_level access_level effective_share effective_access)
   @roles ~w(reader writer)
   @uuid ~r/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$/
 
@@ -10,9 +10,9 @@ defmodule DocmostMCP.VFS.MetaFile do
     id = Normalize.id(page)
 
     with {:ok, share} <- Client.get_share(id),
-         {:ok, info} <- Client.permission_info(id),
-         {:ok, permissions} <- all_permissions(id),
-         do: {:ok, canonical(page, share, info, permissions)}
+         {:ok, access} <- all_access(id) do
+      {:ok, canonical(page, share, access)}
+    end
   end
 
   def apply(page, yaml) do
@@ -37,13 +37,12 @@ defmodule DocmostMCP.VFS.MetaFile do
       {"page_id", meta.page_id},
       {"share", meta.share},
       {"share_level", meta.share_level},
-      {"share_id", meta.share_id},
       {"url", meta.url},
       {"include_sub_pages", meta.include_sub_pages},
       {"search_indexing", meta.search_indexing},
       {"access", meta.access},
       {"access_level", meta.access_level},
-      {"permissions", meta.permissions}
+      {"permissions", Enum.map(meta.permissions, &Map.delete(&1, "grant_id"))}
     ]
     |> Enum.reject(&is_nil(elem(&1, 1)))
     |> Enum.map_join("\n", fn {k, v} -> "#{k}: #{yaml(v)}" end)
@@ -96,6 +95,7 @@ defmodule DocmostMCP.VFS.MetaFile do
 
   defp permissions_valid?(_), do: false
 
+  # Share is one upsert: `PUT {shared: bool, ...}` (false deletes server-side).
   defp apply_share(page, doc, before) do
     desired = doc["share"]
     settings? = Map.has_key?(doc, "include_sub_pages") or Map.has_key?(doc, "search_indexing")
@@ -114,26 +114,17 @@ defmodule DocmostMCP.VFS.MetaFile do
         {:error, :eacces}
 
       desired == "private" ->
-        result(Client.delete_share(before.share_id))
-
-      desired == "public" and before.share == "private" ->
-        result(
-          Client.create_share(%{
-            pageId: Normalize.id(page),
-            includeSubPages: Map.get(doc, "include_sub_pages", false),
-            searchIndexing: Map.get(doc, "search_indexing", false)
-          })
-        )
+        result(Client.update_share(Normalize.id(page), %{shared: false}))
 
       before.share_level > 0 ->
         {:error, :eacces}
 
       desired in [nil, "public"] ->
         result(
-          Client.update_share(%{
-            shareId: before.share_id,
-            includeSubPages: Map.get(doc, "include_sub_pages", before.include_sub_pages),
-            searchIndexing: Map.get(doc, "search_indexing", before.search_indexing)
+          Client.update_share(Normalize.id(page), %{
+            shared: true,
+            includeSubPages: Map.get(doc, "include_sub_pages", before.include_sub_pages || false),
+            searchIndexing: Map.get(doc, "search_indexing", before.search_indexing || false)
           })
         )
     end
@@ -145,39 +136,57 @@ defmodule DocmostMCP.VFS.MetaFile do
       "restricted" when before.access == "direct" -> :ok
       "open" when before.access == "open" -> :ok
       "open" when before.access == "inherited" -> {:error, :eacces}
-      "open" -> result(Client.remove_restriction(Normalize.id(page)))
-      "restricted" -> result(Client.restrict_page(Normalize.id(page)))
+      "open" -> result(Client.set_restriction(Normalize.id(page), false))
+      "restricted" -> result(Client.set_restriction(Normalize.id(page), true))
     end
   end
 
+  # Grant-id set ops against GET /access grants: adds batch through
+  # POST /access/grants, role changes PATCH /access/grants/:grantId, removals
+  # DELETE /access/grants/:grantId — no principal-identity diffing on delete.
   defp apply_permissions(_page, doc, _before) when not is_map_key(doc, "permissions"), do: :ok
   defp apply_permissions(_page, %{"permissions" => nil}, _before), do: :ok
 
   defp apply_permissions(page, doc, before) do
+    page_id = Normalize.id(page)
     requested = Enum.flat_map(doc["permissions"], &principals/1)
-    existing = Enum.flat_map(before.permissions, &principals/1)
-    existing_by_id = Map.new(existing, &{identity(&1), &1})
-    requested_by_id = Map.new(requested, &{identity(&1), &1})
+    existing_by_principal = Map.new(before.permissions, &{{&1["type"], &1["id"]}, &1})
+    requested_by_principal = Map.new(requested, &{identity(&1), &1})
 
-    adds = Enum.reject(requested, &Map.has_key?(existing_by_id, identity(&1)))
+    adds =
+      requested
+      |> Enum.reject(&Map.has_key?(existing_by_principal, identity(&1)))
+      |> Enum.map(&%{type: &1["type"], principalId: &1["id"], role: &1["role"]})
+      |> Enum.chunk_every(25)
 
     updates =
-      Enum.filter(requested, fn requested_permission ->
-        case existing_by_id[identity(requested_permission)] do
-          nil -> false
-          existing_permission -> existing_permission["role"] != requested_permission["role"]
+      Enum.flat_map(requested, fn requested_permission ->
+        case existing_by_principal[identity(requested_permission)] do
+          %{"grant_id" => grant_id, "role" => role} ->
+            if role != requested_permission["role"],
+              do: [{grant_id, requested_permission["role"]}],
+              else: []
+
+          _ ->
+            []
         end
       end)
 
     removes =
       if doc["permissions_mode"] == "replace",
-        do: Enum.reject(existing, &Map.has_key?(requested_by_id, identity(&1))),
+        do:
+          Enum.flat_map(before.permissions, fn grant ->
+            if Map.has_key?(requested_by_principal, {grant["type"], grant["id"]}),
+              do: [],
+              else: [grant["grant_id"]]
+          end),
         else: []
 
     # Add first: on partial API failure access remains a safe superset, never an empty ACL.
-    with :ok <- each(adds, &Client.add_permission(payload(page, &1))),
-         :ok <- each(updates, &Client.update_permission(update_payload(page, &1))),
-         :ok <- each(removes, &Client.remove_permission(remove_payload(page, &1))),
+    with :ok <- each(adds, &Client.add_grants(page_id, &1)),
+         :ok <-
+           each(updates, fn {grant_id, role} -> Client.update_grant(page_id, grant_id, role) end),
+         :ok <- each(removes, &Client.remove_grant(page_id, &1)),
          do: :ok
   end
 
@@ -210,86 +219,73 @@ defmodule DocmostMCP.VFS.MetaFile do
       "group_ids" => Normalize.value(p, :group_ids) || Normalize.value(p, :groupIds) || []
     }
 
-  defp payload(page, p),
-    do:
-      %{pageId: Normalize.id(page), role: p["role"]}
-      |> principal_payload(p)
-
-  defp remove_payload(page, p),
-    do:
-      %{pageId: Normalize.id(page)}
-      |> principal_payload(p)
-
-  defp update_payload(page, %{"type" => "user", "id" => id, "role" => role}),
-    do: %{pageId: Normalize.id(page), userId: id, role: role}
-
-  defp update_payload(page, %{"type" => "group", "id" => id, "role" => role}),
-    do: %{pageId: Normalize.id(page), groupId: id, role: role}
-
-  defp principal_payload(payload, %{"type" => "user", "id" => id}),
-    do: Map.put(payload, :userIds, [id])
-
-  defp principal_payload(payload, %{"type" => "group", "id" => id}),
-    do: Map.put(payload, :groupIds, [id])
+  # GET /access grant `{id, type, principalId, role}` → canonical principal
+  # entry; `grant_id` is internal (stripped from encoded YAML).
+  defp grant(g),
+    do: %{
+      "type" => Normalize.value(g, :type) || "user",
+      "id" => Normalize.value(g, :principalId),
+      "role" => Normalize.value(g, :role) || "reader",
+      "grant_id" => Normalize.value(g, :id)
+    }
 
   defp each(items, fun),
     do: if(Enum.all?(items, &(result(fun.(&1)) == :ok)), do: :ok, else: {:error, :eio})
 
-  defp canonical(page, share_raw, info, permissions) do
-    share = effective(share_items(share_raw))
+  # GET /access returns the restriction summary plus the (paginated) grants.
+  defp all_access(id), do: collect_access(id, nil, [], MapSet.new())
 
-    direct = Normalize.value(info, :hasDirectRestriction) == true
-    inherited = Normalize.value(info, :hasInheritedRestriction) == true
-    access = if(direct, do: "direct", else: if(inherited, do: "inherited", else: "open"))
+  defp collect_access(id, cursor, grants, seen) do
+    if cursor && MapSet.member?(seen, cursor) do
+      {:error, :eio}
+    else
+      with {:ok, raw} <- Client.get_access(id, cursor) do
+        page_grants = Normalize.list(Normalize.value(raw, :grants))
+        grants = grants ++ page_grants
+        next = Normalize.next_cursor(Normalize.value(raw, :grants) || raw)
 
-    %{
-      page_id: Normalize.id(page),
-      share: if(share.item, do: "public", else: "private"),
-      share_level: share.level,
-      share_id: share.item && Normalize.id(share.item),
-      include_sub_pages: share.item && !!Normalize.value(share.item, :includeSubPages),
-      search_indexing: share.item && !!Normalize.value(share.item, :searchIndexing),
-      url: share.item && public_url(page, share.item),
-      access: access,
-      access_level: if(direct, do: 0, else: if(inherited, do: 1, else: nil)),
-      permissions: Enum.map(permissions, &permission/1)
-    }
-  end
-
-  defp all_permissions(id), do: collect(id, nil, [], MapSet.new())
-
-  defp collect(id, cursor, acc, seen) do
-    if cursor && MapSet.member?(seen, cursor),
-      do: {:error, :eio},
-      else: collect_page(id, cursor, acc, seen)
-  end
-
-  defp collect_page(id, cursor, acc, seen) do
-    with {:ok, raw} <- Client.list_permissions(id, cursor) do
-      rows = Normalize.list(raw)
-      next = Normalize.next_cursor(raw)
-
-      if next,
-        do: collect(id, next, acc ++ rows, MapSet.put(seen, next)),
-        else: {:ok, acc ++ rows}
+        if next,
+          do: collect_access(id, next, grants, MapSet.put(seen, cursor)),
+          else: {:ok, Map.put(raw, "grants", grants)}
+      end
     end
   end
 
-  defp effective(items) do
-    item = Enum.min_by(items, &(Normalize.value(&1, :level) || 0), fn -> nil end)
-    %{item: item, level: item && (Normalize.value(item, :level) || 0)}
+  defp canonical(page, share_raw, access) do
+    share = share_raw || %{}
+    shared = Normalize.value(share, :shared) == true
+    level = Normalize.value(share, :level) || 0
+
+    restriction = Normalize.value(access, :restriction)
+    direct = restriction == "direct"
+    inherited = restriction == "inherited"
+
+    %{
+      page_id: Normalize.id(page),
+      share: if(shared, do: "public", else: "private"),
+      share_level: level,
+      include_sub_pages: shared && !!Normalize.value(share, :includeSubPages),
+      search_indexing: shared && !!Normalize.value(share, :searchIndexing),
+      url: shared && public_url(page, share),
+      access: if(direct, do: "direct", else: if(inherited, do: "inherited", else: "open")),
+      access_level: if(direct, do: 0, else: if(inherited, do: 1, else: nil)),
+      permissions: access |> Normalize.value(:grants) |> Normalize.list() |> Enum.map(&grant/1)
+    }
   end
 
-  defp share_items(v) when is_list(v), do: v
-  defp share_items(%{"shares" => v}) when is_list(v), do: v
-  defp share_items(%{} = v) when map_size(v) > 0, do: [v]
-  defp share_items(_), do: []
-
+  # Server-computed `publicUrl` wins; fall back to local derivation only when
+  # the server omits it (pre-v1 fork).
   defp public_url(page, share) do
-    base = Config.api_url() |> String.replace_suffix("/api", "")
-    key = Normalize.value(share, :key)
-    slug = Normalize.value(page, :slugId) || Normalize.id(page)
-    if key, do: "#{base}/share/#{key}/p/untitled-#{slug}", else: nil
+    case Normalize.value(share, :publicUrl) do
+      url when is_binary(url) and url != "" ->
+        url
+
+      _ ->
+        base = Config.api_url() |> String.replace_suffix("/api/v1", "")
+        key = Normalize.value(share, :key)
+        slug = Normalize.value(page, :slugId) || Normalize.id(page)
+        if key, do: "#{base}/share/#{key}/p/untitled-#{slug}", else: nil
+    end
   end
 
   defp result({:ok, _}), do: :ok
