@@ -7,6 +7,14 @@ defmodule DocmostMCP.VFS.Backend do
   alias Noizu.MCP.Server.Features.Pagination
   alias Noizu.MCP.VFS
 
+  # Root-level generated/reserved names (Noizu.MCP.VFS.Readme claims
+  # /README.md) must read as :enoent, not :eisdir: the substrate's
+  # Features.VFS read wrapper only falls back to its generated Readme on
+  # :enoent, and a bare single-segment path would otherwise parse into the
+  # space namespace and block mounters from ever seeing the readme.
+  # Only names the substrate claims at root belong here.
+  @reserved_root_names ~w(README.md)
+
   @impl true
   def __mcp_vfs__(:describe),
     do: "Docmost spaces and wiki pages. Write `<page>.meta` to manage sharing and access."
@@ -140,6 +148,11 @@ defmodule DocmostMCP.VFS.Backend do
   defp list_kind(_, _), do: {:error, :enotdir}
 
   defp read_kind(:root), do: {:error, :eisdir}
+
+  # Must precede the bare {:space, _} clause — see @reserved_root_names.
+  defp read_kind({:space, reserved}) when reserved in @reserved_root_names,
+    do: {:error, :enoent}
+
   defp read_kind({:space, _}), do: {:error, :eisdir}
 
   defp read_kind({:page_dir, _, _}), do: {:error, :eisdir}

@@ -29,10 +29,21 @@ defmodule DocmostMCP.MixProject do
     [
       noizu_mcp_dep(),
       {:req, "~> 0.5"},
-      {:plug, "~> 1.16", only: :test},
+      {:bandit, "~> 1.5"},
+      {:plug, "~> 1.16"},
       {:jason, "~> 1.4"},
       {:yaml_elixir, "~> 2.11"}
-    ]
+    ] ++ test_deps()
+  end
+
+  defp test_deps do
+    if Mix.env() == :test do
+      [
+        {:mint_web_socket, "~> 1.0"}
+      ]
+    else
+      []
+    end
   end
 
   # Supports both the normal checkout and the mandated nested worktree layout.
@@ -44,6 +55,6 @@ defmodule DocmostMCP.MixProject do
           &File.dir?(Path.expand(&1, __DIR__))
         )
 
-    if path, do: {:noizu_mcp, path: path}, else: {:noizu_mcp, "~> 0.4.0"}
+    if path, do: {:noizu_mcp, path: path}, else: {:noizu_mcp, "~> 0.4.1"}
   end
 end

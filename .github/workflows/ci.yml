@@ -36,7 +36,7 @@ jobs:
             ${{ runner.os }}-otp-28.5-elixir-1.18.4-
 
       - name: Install dependencies
-        run: mix deps.get
+        run: MIX_ENV=test mix deps.get
 
       - name: Check formatting
         run: mix format --check-formatted

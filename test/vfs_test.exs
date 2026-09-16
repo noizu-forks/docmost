@@ -72,6 +72,25 @@ defmodule DocmostMCP.VFSTest do
     assert changed.version > first.version
   end
 
+  # mcp-mount's sync reads /README.md first. The substrate's Features.VFS read
+  # wrapper only falls back to its generated Readme when the backend returns
+  # :enoent — a bare root-level name used to parse into the space namespace
+  # and come back :eisdir, stranding the mounter in a reconnect loop.
+  test "reading /README.md serves the generated substrate readme", %{ctx: ctx} do
+    alias Noizu.MCP.Server.Features.VFS
+
+    assert {:ok, content, version} = VFS.read(Backend, "/README.md", ctx)
+    assert is_binary(content) and content != ""
+    assert content =~ "Docmost spaces and wiki pages"
+    assert is_integer(version)
+
+    assert {:ok, entries, nil} = VFS.list(Backend, "/", nil, ctx)
+    assert Enum.any?(entries, &match?(%{name: "README.md", type: :file}, &1))
+
+    # The live mount path is the composed backend; same contract there.
+    assert {:ok, _, _} = VFS.read(DocmostMCP.VFS.Controlled, "/README.md", ctx)
+  end
+
   test "lists spaces and paired page/meta files", %{ctx: ctx} do
     assert {:ok, [%{name: "engineering"}], nil} = Backend.list("/", nil, ctx)
     assert {:ok, entries, nil} = Backend.list("/engineering", nil, ctx)

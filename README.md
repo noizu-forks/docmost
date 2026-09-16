@@ -64,6 +64,37 @@ Set `config :docmost_mcp, start_stdio: false` when embedding the OTP app.
 - Inherited shares/restrictions are reported with a positive `*_level` and cannot be removed at a child page. Permissions are additive unless `permissions_mode: replace` is explicit. Unknown, contradictory, and read-only fields are rejected.
 - Replace mode is the closest Docmost allows to a permission transaction: it validates the complete document and adds new principals before removing old ones, so a mid-request API failure can leave a safe permission superset.
 
+
+## Mounting as a local filesystem
+
+The MCP server can expose its VFS over a localhost WebSocket so `mcp-mount` can project the wiki as a real filesystem. The listener is opt-in and off unless a mount token is configured:
+
+```sh
+DOCMOST_MCP_MOUNT_TOKEN=$(openssl rand -hex 32) DOCMOST_MCP_MOUNT_PORT=4700 mix run --no-halt
+```
+
+Then mount (read-only):
+
+```sh
+mcp-mount --transport vfs-ws --url ws://127.0.0.1:4700/vfs --token "$DOCMOST_MCP_MOUNT_TOKEN" ~/wiki
+```
+
+Or with writes (still gated by the `writes` toggle below):
+
+```sh
+mcp-mount --transport vfs-ws --url ws://127.0.0.1:4700/vfs --token "$DOCMOST_MCP_MOUNT_TOKEN" --write ~/wiki
+```
+
+Caveats:
+
+- The mount token is separate from `DOCMOST_API_KEY` — it authorizes the WebSocket only and carries no Docmost HTTP credentials. Auth is two-layer: a `Bearer` check on the HTTP upgrade (401 before any socket exists) plus a `vfs/auth` handshake frame (failure is `-32001`).
+- The listener binds to `127.0.0.1` only, on its own dedicated port; it is never shared with or forwarded through other transports.
+- External Docmost edits are invisible to a live mount until the client reconnects and re-syncs; restarting the server bumps every VFS version, forcing clients to re-pull.
+- Writes through the mount respect `DOCMOST_MCP_WRITES` and its runtime override: write `true`/`false` to `/etc/dev/config/writes` (visible in the mount at `~/wiki/etc/dev/config/writes`) to flip the gate without restarting.
+- **Creating pages via the mount lands under a server-assigned slug** — Docmost assigns its own slug from the title, so a locally created `notes.md` may materialize as `<slug>.md` elsewhere in the space; the create response does not echo the final path and the local path stays stale (or churns `.conflict` files) until the next resync. Prefer writing into existing pages through the mount; create new pages directly in Docmost or via the `docmost_page_create` tool.
+- `/etc/dev/**` also exposes runtime status, cache stats/flush, and per-tool invocation nodes; treat the mount as an operator surface, not a document dump.
+
 ## Development notes
+
 
 The checkout uses the current sibling `elixir-mcp` library; `NOIZU_MCP_PATH` can override that path outside the monorepo.

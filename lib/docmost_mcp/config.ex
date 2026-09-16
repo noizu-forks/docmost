@@ -3,6 +3,17 @@ defmodule DocmostMCP.Config do
 
   def client, do: Application.fetch_env!(:docmost_mcp, :client)
   def writes?, do: Application.get_env(:docmost_mcp, :writes, false)
+
+  # `/etc/dev/config/writes` toggle setter. Returns `:ok` on success and
+  # `{:error, :einval}` for non-boolean payloads — never raises; the VFS
+  # control layer collapses any non-`:ok` verdict into `:eio`.
+  def set_writes!(value) when is_boolean(value) do
+    Application.put_env(:docmost_mcp, :writes, value)
+    :ok
+  end
+
+  def set_writes!(_value), do: {:error, :einval}
+
   def req_options, do: Application.get_env(:docmost_mcp, :req_options, [])
 
   def api_url do
