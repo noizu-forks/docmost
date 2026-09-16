@@ -6,229 +6,138 @@ defmodule DocmostMCP.Client.Req do
   alias DocmostMCP.{Config, Error}
 
   @impl true
-  def list_spaces(cursor), do: request(:post, "/spaces", compact(%{limit: 100, cursor: cursor}))
+  def list_spaces(cursor), do: get("/spaces", %{limit: 100, cursor: cursor})
+
   @impl true
-  def get_space(id), do: request(:post, "/spaces/info", %{spaceId: id})
+  def get_space(id), do: get("/spaces/#{id}")
+
   @impl true
-  def create_space(attrs), do: request(:post, "/spaces/create", attrs)
+  def create_space(attrs), do: post("/spaces", attrs)
+
   @impl true
   def list_pages(space_id, cursor),
-    do:
-      request(
-        :post,
-        "/pages/sidebar-pages",
-        compact(%{spaceId: space_id, limit: 100, cursor: cursor})
-      )
+    do: get("/spaces/#{space_id}/pages", %{limit: 100, cursor: cursor})
 
   @impl true
   def list_child_pages(page_id, cursor),
-    do:
-      request(
-        :post,
-        "/pages/sidebar-pages",
-        compact(%{pageId: page_id, limit: 100, cursor: cursor})
-      )
+    do: get("/pages/#{page_id}/children", %{limit: 100, cursor: cursor})
 
   @impl true
-  def get_page(id),
-    do:
-      request(:post, "/pages/info", %{
-        pageId: id,
-        includeSpace: true,
-        includeContent: true,
-        format: "markdown"
-      })
+  def get_page(id), do: get("/pages/#{id}")
 
   @impl true
-  def create_page(attrs), do: request(:post, "/pages/create", create_content_options(attrs))
+  def create_page(attrs) do
+    {space_id, attrs} = Map.pop(attrs, :spaceId)
+    post("/spaces/#{space_id}/pages", rename_parent(attrs))
+  end
+
   @impl true
-  def update_page(id, attrs),
-    do:
-      request(
-        :post,
-        "/pages/update",
-        attrs |> Map.put(:pageId, id) |> update_content_options()
-      )
+  def update_page(id, attrs) do
+    meta =
+      attrs
+      |> rename_parent()
+      |> Map.take([:title, :parentId])
+      |> compact()
+
+    with {:ok, page} <- patch_meta(id, meta) do
+      if Map.has_key?(attrs, :content),
+        do: put_content(id, attrs),
+        else: {:ok, page}
+    end
+  end
 
   @impl true
   def delete_page(id) do
-    case request(:post, "/pages/delete", %{pageId: id, permanentlyDelete: false}) do
+    case request(:delete, "/pages/#{id}", nil, []) do
       {:ok, _} -> :ok
+      {:error, %Error{status: 404}} -> :ok
       error -> error
     end
   end
 
   @impl true
-  def get_share(id), do: request(:post, "/shares/for-page", %{pageId: id})
-  # The fork base has no core /shares/create|update|delete endpoints; the v1
-  # share upsert (PUT /v1/pages/:id/share, `shared: false` deletes) is the
-  # write surface.
-  @impl true
-  def create_share(%{pageId: page_id} = attrs), do: put_share(page_id, true, attrs)
+  def get_share(id), do: get("/pages/#{id}/share")
 
   @impl true
-  def update_share(%{pageId: page_id} = attrs), do: put_share(page_id, true, attrs)
+  def update_share(id, attrs), do: put("/pages/#{id}/share", attrs)
 
-  # Callers pass the page id — v1 has no share-id-addressed delete.
   @impl true
-  def delete_share(page_id), do: put_share(page_id, false, %{})
+  def get_access(id, cursor), do: get("/pages/#{id}/access", compact(%{cursor: cursor}))
 
-  defp put_share(page_id, shared, attrs) do
+  @impl true
+  def set_restriction(id, restricted),
+    do: put("/pages/#{id}/access/restriction", %{restricted: restricted})
+
+  @impl true
+  def add_grants(id, grants), do: post("/pages/#{id}/access/grants", %{grants: grants})
+
+  @impl true
+  def update_grant(id, grant_id, role),
+    do: patch("/pages/#{id}/access/grants/#{grant_id}", %{role: role})
+
+  @impl true
+  def remove_grant(id, grant_id) do
+    case request(:delete, "/pages/#{id}/access/grants/#{grant_id}", nil, []) do
+      {:ok, _} -> {:ok, %{}}
+      {:error, %Error{status: 404}} -> {:ok, %{}}
+      error -> error
+    end
+  end
+
+  defp get(path, params \\ nil) do
+    params = if params, do: compact(params), else: %{}
+
+    if params == %{},
+      do: request(:get, path, nil, []),
+      else: request(:get, path, nil, params: params)
+  end
+
+  defp post(path, body), do: request(:post, path, body, [])
+  defp put(path, body), do: request(:put, path, body, [])
+  defp patch(path, body), do: request(:patch, path, body, [])
+
+  defp patch_meta(_id, meta) when map_size(meta) == 0, do: {:ok, nil}
+
+  defp patch_meta(id, meta), do: request(:patch, "/pages/#{id}", meta, [])
+
+  defp put_content(id, attrs) do
     body =
-      %{
-        "shared" => shared,
-        "includeSubPages" => value_of(attrs, :includeSubPages, "includeSubPages"),
-        "searchIndexing" => value_of(attrs, :searchIndexing, "searchIndexing")
-      }
-      |> Map.reject(fn {_k, v} -> is_nil(v) end)
+      attrs
+      |> Map.take([:content, :operation])
+      |> Map.put_new(:operation, "replace")
 
-    request(:put, "/v1/pages/#{page_id}/share", body)
+    request(:put, "/pages/#{id}/content", body, [])
   end
 
-  defp value_of(map, k1, k2), do: Map.get(map, k1) || Map.get(map, k2)
-  @impl true
-  # Core has no /pages/permission-info in this fork base; the v1 access
-  # surface carries the same signal (restriction: none|direct|inherited).
-  def permission_info(id) do
-    case request(:get, "/v1/pages/#{id}/access", nil) do
-      {:ok, %{"restriction" => restriction} = access} when is_binary(restriction) ->
-        {:ok,
-         access
-         |> Map.put("hasDirectRestriction", restriction == "direct")
-         |> Map.put("hasInheritedRestriction", restriction == "inherited")}
-
-      {:ok, other} ->
-        {:ok, other}
-
-      error ->
-        error
-    end
-  end
-  @impl true
-  # Core has no POST /pages/permissions here; grants come from the v1
-  # access surface nested under the restriction summary.
-  def list_permissions(id, cursor) do
-    qs = if cursor in [nil, ""], do: "", else: "?cursor=#{URI.encode_www_form(cursor)}"
-
-    case request(:get, "/v1/pages/#{id}/access#{qs}", nil) do
-      {:ok, %{"grants" => grants}} ->
-        rows =
-          grants
-          |> unwrap()
-          |> case do
-            rows when is_list(rows) ->
-              Enum.map(rows, fn row ->
-                row
-                |> Map.put("grantId", row["id"])
-                |> Map.put("id", row["principalId"])
-              end)
-
-            _ ->
-              []
-          end
-
-        {:ok, %{"data" => rows, "meta" => %{"nextCursor" => nil}}}
-
-      {:ok, _} ->
-        {:ok, %{"data" => [], "meta" => %{"nextCursor" => nil}}}
-
-      error ->
-        error
+  # v1 DTOs use `parentId`; older callers pass `parentPageId`.
+  defp rename_parent(attrs) do
+    case Map.pop(attrs, :parentPageId) do
+      {nil, attrs} -> attrs
+      {parent_id, attrs} -> Map.put(attrs, :parentId, parent_id)
     end
   end
 
-  @impl true
-  def restrict_page(id),
-    do: request(:put, "/v1/pages/#{id}/access/restriction", %{"restricted" => true})
-
-  @impl true
-  def remove_restriction(id),
-    do: request(:put, "/v1/pages/#{id}/access/restriction", %{"restricted" => false})
-
-  @impl true
-  def add_permission(%{pageId: page_id, role: role} = attrs) do
-    grants =
-      grant_principals(attrs)
-      |> Enum.map(fn type -> %{"type" => type, "principalId" => grant_principal_id(attrs, type), "role" => role} end)
-
-    case grants do
-      [] -> {:ok, %{}}
-      grants -> request(:post, "/v1/pages/#{page_id}/access/grants", %{"grants" => grants})
-    end
-  end
-
-  @impl true
-  def update_permission(%{pageId: page_id, role: role} = attrs) do
-    case find_grant(page_id, attrs) do
-      {:ok, grant} ->
-        request(:patch, "/v1/pages/#{page_id}/access/grants/#{grant["grantId"]}", %{"role" => role})
-
-      other ->
-        other
-    end
-  end
-
-  @impl true
-  def remove_permission(%{pageId: page_id} = attrs) do
-    case find_grant(page_id, attrs) do
-      {:ok, grant} ->
-        request(:delete, "/v1/pages/#{page_id}/access/grants/#{grant["grantId"]}", nil)
-
-      other ->
-        other
-    end
-  end
-
-  defp grant_principals(attrs) do
-    user_ids = value_of(attrs, :userIds, "userIds") || []
-    group_ids = value_of(attrs, :groupIds, "groupIds") || []
-
-    Enum.map(user_ids, fn _ -> "user" end) ++ Enum.map(group_ids, fn _ -> "group" end)
-  end
-
-  defp grant_principal_id(attrs, "user"), do: (value_of(attrs, :userIds, "userIds") || []) |> List.first()
-  defp grant_principal_id(attrs, "group"), do: (value_of(attrs, :groupIds, "groupIds") || []) |> List.first()
-
-  defp find_grant(page_id, attrs) do
-    case list_permissions(page_id, nil) do
-      {:ok, grants} ->
-        rows = Normalize.list(grants)
-
-        principal_type = (value_of(attrs, :userIds, "userIds") && "user") || "group"
-
-        grant =
-          Enum.find(rows, fn row ->
-            Normalize.value(row, :type) == principal_type and
-              Normalize.value(row, :principalId) == grant_principal_id(attrs, principal_type)
-          end)
-
-        if grant, do: {:ok, grant}, else: {:ok, nil}
-
-      error ->
-        error
-    end
-  end
-
-  defp request(method, path, body) do
+  defp request(method, path, body, options) do
     options =
-      Keyword.merge(Config.req_options(),
+      Config.req_options()
+      |> Keyword.merge(
         method: method,
         url: Config.api_url() <> path,
         headers: headers()
       )
+      |> Keyword.merge(options)
 
     options = if body, do: Keyword.put(options, :json, body), else: options
 
     case Req.request(options) do
-      {:ok, %{status: status, body: %{"success" => false} = response}}
-      when status in 200..299 ->
-        {:error, Error.from_response(response["status"] || status, response)}
+      {:ok, %{status: status, body: %{"error" => %{} = error}}} when map_size(error) > 0 ->
+        {:error, Error.from_response(error["statusCode"] || status, %{"error" => error})}
 
-      {:ok, %{status: status, body: response}} when status in 200..299 ->
-        {:ok, unwrap(response)}
+      {:ok, %{status: status, body: body}} when status in 200..299 ->
+        {:ok, empty_to_map(body)}
 
-      {:ok, %{status: status, body: response}} ->
-        {:error, Error.from_response(status, response)}
+      {:ok, %{status: status, body: body}} ->
+        {:error, Error.from_response(status, body)}
 
       {:error, reason} ->
         {:error, %Error{message: "Docmost request failed", details: reason}}
@@ -253,25 +162,7 @@ defmodule DocmostMCP.Client.Req do
     end
   end
 
-  defp unwrap(%{"data" => data}), do: data
-  defp unwrap(%{data: data}), do: data
-  defp unwrap(nil), do: %{}
-  defp unwrap(other), do: other
+  defp empty_to_map(body) when body in [nil, "", %{}], do: %{}
+  defp empty_to_map(body), do: body
   defp compact(map), do: Map.reject(map, fn {_key, value} -> is_nil(value) end)
-
-  defp create_content_options(attrs) do
-    if Map.has_key?(attrs, :content) or Map.has_key?(attrs, "content") do
-      Map.put(attrs, :format, "markdown")
-    else
-      attrs
-    end
-  end
-
-  defp update_content_options(attrs) do
-    if Map.has_key?(attrs, :content) or Map.has_key?(attrs, "content") do
-      attrs |> Map.put(:format, "markdown") |> Map.put_new(:operation, "replace")
-    else
-      attrs
-    end
-  end
 end

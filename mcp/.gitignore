@@ -3,3 +3,4 @@
 /.elixir_ls/
 /doc/
 /cover/
+erl_crash.dump

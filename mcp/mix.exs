@@ -11,7 +11,10 @@ defmodule DocmostMCP.MixProject do
       start_permanent: Mix.env() == :prod,
       elixirc_paths: elixirc_paths(Mix.env()),
       deps: deps(),
-      test_coverage: [summary: [threshold: 0]]
+      test_coverage: [
+        summary: [threshold: 85],
+        ignore_modules: [DocmostMCP.TestClient, DocmostMCP.StubClient]
+      ]
     ]
   end
 

@@ -3,10 +3,8 @@ defmodule DocmostMCP.Normalize do
 
   def value(map, key) when is_map(map), do: map[to_string(key)] || map[key]
   def value(_, _), do: nil
-  def list(%{"items" => items}) when is_list(items), do: items
-  def list(%{"spaces" => items}) when is_list(items), do: items
-  def list(%{"pages" => items}) when is_list(items), do: items
-  def list(%{"permissions" => items}) when is_list(items), do: items
+
+  def list(%{"data" => items}) when is_list(items), do: items
   def list(items) when is_list(items), do: items
   def list(_), do: []
 

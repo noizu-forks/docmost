@@ -9,6 +9,9 @@ defmodule DocmostMCP.Client do
   def list_child_pages(page_id, cursor \\ nil),
     do: apply(DocmostMCP.Config.client(), :list_child_pages, [page_id, cursor])
 
+  def get_access(page_id, cursor \\ nil),
+    do: apply(DocmostMCP.Config.client(), :get_access, [page_id, cursor])
+
   for {name, arity} <- [
         get_space: 1,
         create_space: 1,
@@ -17,16 +20,11 @@ defmodule DocmostMCP.Client do
         update_page: 2,
         delete_page: 1,
         get_share: 1,
-        create_share: 1,
-        update_share: 1,
-        delete_share: 1,
-        permission_info: 1,
-        list_permissions: 2,
-        restrict_page: 1,
-        remove_restriction: 1,
-        add_permission: 1,
-        update_permission: 1,
-        remove_permission: 1
+        update_share: 2,
+        set_restriction: 2,
+        add_grants: 2,
+        update_grant: 3,
+        remove_grant: 2
       ] do
     args = Macro.generate_arguments(arity, __MODULE__)
 
