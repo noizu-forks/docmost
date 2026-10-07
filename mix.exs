@@ -55,6 +55,6 @@ defmodule DocmostMCP.MixProject do
           &File.dir?(Path.expand(&1, __DIR__))
         )
 
-    if path, do: {:noizu_mcp, path: path}, else: {:noizu_mcp, "~> 0.4.1"}
+    if path, do: {:noizu_mcp, path: path}, else: {:noizu_mcp, "~> 0.5.0"}
   end
 end
