@@ -12,7 +12,7 @@ defmodule DocmostMCP.MixProject do
       elixirc_paths: elixirc_paths(Mix.env()),
       deps: deps(),
       test_coverage: [
-        summary: [threshold: 85],
+        summary: [threshold: 90],
         ignore_modules: [DocmostMCP.TestClient, DocmostMCP.StubClient]
       ]
     ]
