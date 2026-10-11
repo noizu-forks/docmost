@@ -14,9 +14,10 @@ defmodule DocmostMCP.Server do
     directory per space; each page appears as `<slug>.md` with a sibling
     `<slug>.meta` YAML control file. Writing `share: public` to the meta file
     creates or updates a public share. Read the meta file afterward for `url`.
-    Mutations require DOCMOST_MCP_WRITES=1.
+    Mutations require DOCMOST_MCP_WRITES=1 (or a write to /etc/dev/config/writes
+    on the mount).
     """
 
   tool(DocmostMCP.Tools.Core)
-  vfs(DocmostMCP.VFS.Backend)
+  vfs(DocmostMCP.VFS.Controlled)
 end

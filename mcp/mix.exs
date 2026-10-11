@@ -9,10 +9,13 @@ defmodule DocmostMCP.MixProject do
       version: @version,
       elixir: "~> 1.18",
       start_permanent: Mix.env() == :prod,
+      # Cross-arch release: no bundled erts, bytecode only.
+      # The runtime container supplies the (amd64) OTP (see mcp/Dockerfile).
+      releases: [docmost_mcp: [include_erts: false]],
       elixirc_paths: elixirc_paths(Mix.env()),
       deps: deps(),
       test_coverage: [
-        summary: [threshold: 85],
+        summary: [threshold: 90],
         ignore_modules: [DocmostMCP.TestClient, DocmostMCP.StubClient]
       ]
     ]
@@ -29,13 +32,23 @@ defmodule DocmostMCP.MixProject do
     [
       noizu_mcp_dep(),
       {:req, "~> 0.5"},
-      # HTTP streamable transport + session-identity auth plug (fork integration)
-      {:plug, "~> 1.16"},
       {:bandit, "~> 1.5"},
+      {:plug, "~> 1.16"},
+      # Session-identity auth JWT verification (fork integration)
       {:jose, "~> 1.11"},
       {:jason, "~> 1.4"},
       {:yaml_elixir, "~> 2.11"}
-    ]
+    ] ++ test_deps()
+  end
+
+  defp test_deps do
+    if Mix.env() == :test do
+      [
+        {:mint_web_socket, "~> 1.0"}
+      ]
+    else
+      []
+    end
   end
 
   # Supports both the normal checkout and the mandated nested worktree layout.
