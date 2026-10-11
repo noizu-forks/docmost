@@ -15,6 +15,7 @@ import {
   IconSparkles,
   IconHistory,
   IconShieldCheck,
+  IconPlugConnected,
 } from "@tabler/icons-react";
 import { Link, useLocation } from "react-router-dom";
 import classes from "./settings.module.css";
@@ -134,6 +135,12 @@ const groupedData: DataGroup[] = [
         label: "License & Edition",
         icon: IconKey,
         path: "/settings/license",
+      },
+      {
+        label: "MCP Service & VFS",
+        icon: IconPlugConnected,
+        path: "/settings/mcp-vfs",
+        role: "admin",
       },
     ],
   },
