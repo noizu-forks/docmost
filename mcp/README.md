@@ -93,6 +93,12 @@ This copy of docmost-mcp is vendored into noizu-forks/docmost via `git subtree`
 
 Local checks: `mix test`, `mix format --check-formatted`.
 
+**Post-push image smoke:** GH amd64 runners cannot build this image (BEAM
+segfaults under amd64→arm64 emulation), so it is built and pushed manually from
+arm64 as `ops.noizu.com/docmost.noizu.com/mcp:sha-<forksha>`. After pushing a
+tag, smoke it from CI — `gh workflow run mcp-image-smoke.yml -f tag=sha-<forksha>`
+(`.github/workflows/mcp-image-smoke.yml` pulls the tag and boots it on linux/amd64).
+
 **Subtree sync** (run from the docmost fork root):
 
     git subtree pull --prefix=mcp https://github.com/noizu-labs/docmost-mcp.git develop
