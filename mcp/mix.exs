@@ -9,6 +9,9 @@ defmodule DocmostMCP.MixProject do
       version: @version,
       elixir: "~> 1.18",
       start_permanent: Mix.env() == :prod,
+      # Cross-arch release: no bundled erts, bytecode only.
+      # The runtime container supplies the (amd64) OTP (see mcp/Dockerfile).
+      releases: [docmost_mcp: [include_erts: false]],
       elixirc_paths: elixirc_paths(Mix.env()),
       deps: deps(),
       test_coverage: [

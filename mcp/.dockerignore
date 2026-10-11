@@ -1,0 +1,9 @@
+# Keep the docker context minimal and reproducible: local dev artifacts
+# (deps symlink per the worktree layout, _build) and non-runtime dirs must
+# never leak into the image build. Fork-local file — upstream never sees it.
+deps
+_build
+test
+.env*
+*.md
+Caddyfile

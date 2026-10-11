@@ -121,6 +121,25 @@ This copy of docmost-mcp is vendored into noizu-forks/docmost via `git subtree`
   file — upstream `docker-compose.yml` is untouched) builds this Dockerfile and
   adds a Caddy edge proxy routing `{site}/mcp*` → mcp:4000 (SSE-safe,
   unbuffered) and everything else → docmost:3000.
+- **Cross-arch sidecar image**: the cluster sidecar
+  (`ops.noizu.com/docmost.noizu.com/mcp`) runs on amd64, but a full amd64 BEAM
+  build under Rosetta is not viable (OTP 27/26 segfault in `mix`, OTP 28 fails
+  to boot). `mcp/Dockerfile` therefore builds on the **native arm64** stage,
+  ships an `include_erts: false` release (portable bytecode), and runs it on an
+  **amd64** runtime stage — both pinned to the same hexpm exact-version tag
+  (`hexpm/elixir:1.18.4-erlang-27.3.4.16-alpine-3.22.5`) so OTP matches
+  exactly across arches (official `elixir:` tags skew per-arch and break the
+  boot script). Build from the fork root:
+
+      docker --context orbstack build --platform linux/amd64 \
+        -f mcp/Dockerfile \
+        -t ops.noizu.com/docmost.noizu.com/mcp:sha-<forksha> mcp/
+
+  **Smoke-test by execing the amd64 image** — `docker manifest inspect` is not
+  enough (a wrong-arch release passes manifest checks and dies at boot):
+
+      docker --context orbstack run --rm --platform linux/amd64 \
+        ops.noizu.com/docmost.noizu.com/mcp:sha-<forksha> sh -c 'elixir --version'
 
 Local checks: `mix test`, `mix format --check-formatted`.
 
