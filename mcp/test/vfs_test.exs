@@ -49,18 +49,94 @@ defmodule DocmostMCP.VFSTest do
     assert {:ok, root, nil} = Backend.list("/engineering", nil, ctx)
     assert Enum.any?(root, &(&1.name == "alpha" and &1.type == :dir))
 
-    assert {:ok, [%{name: "child.md"}, %{name: "child.meta"}], nil} =
+    assert {:ok, [%{name: "a-child.md"}, %{name: "a-child.meta"}], nil} =
              Backend.list("/engineering/alpha", nil, ctx)
 
-    assert {:ok, alpha, _} = Backend.read("/engineering/alpha/child.md", ctx)
-    assert {:ok, beta, _} = Backend.read("/engineering/beta/child.md", ctx)
+    assert {:ok, alpha, _} = Backend.read("/engineering/alpha/a-child.md", ctx)
+    assert {:ok, beta, _} = Backend.read("/engineering/beta/b-child.md", ctx)
     assert alpha =~ "under alpha"
     assert beta =~ "under beta"
     assert {:list_child_pages, "a"} in DocmostMCP.TestClient.calls()
     assert {:list_child_pages, "b"} in DocmostMCP.TestClient.calls()
 
     assert {:ok, matches, nil} = Backend.search("/engineering", "under alpha", ctx)
-    assert [%{path: "/engineering/alpha/child.md"}] = matches
+    assert [%{path: "/engineering/alpha/a-child.md"}] = matches
+  end
+
+  test "entries are named by title with short-id suffix on collision", %{ctx: ctx} do
+    DocmostMCP.TestClient.put_pages([
+      %{
+        "id" => "11111111-1111-4111-8111-111111111111",
+        "slugId" => "untitled-x1",
+        "spaceId" => "s1",
+        "title" => "Getting Started Notes",
+        "content" => "one",
+        "parentPageId" => nil
+      },
+      %{
+        "id" => "22222222-2222-4222-8222-222222222222",
+        "slugId" => "untitled-x2",
+        "spaceId" => "s1",
+        "title" => "Getting Started Notes!",
+        "content" => "two",
+        "parentPageId" => nil
+      }
+    ])
+
+    assert {:ok, entries, nil} = Backend.list("/engineering", nil, ctx)
+
+    assert Enum.map(entries, & &1.name) == [
+             "getting-started-notes.md",
+             "getting-started-notes.meta",
+             "getting-started-notes-222222.md",
+             "getting-started-notes-222222.meta"
+           ]
+
+    # Both paths resolve to their own pages; a write-back never crosses wires.
+    assert {:ok, one, _} = Backend.read("/engineering/getting-started-notes.md", ctx)
+    assert {:ok, two, _} = Backend.read("/engineering/getting-started-notes-222222.md", ctx)
+    assert one =~ "one"
+    assert two =~ "two"
+
+    # Stale slug-named paths keep resolving (title renames, old manifests).
+    assert {:ok, one_again, _} = Backend.read("/engineering/untitled-x2.md", ctx)
+    assert one_again =~ "two"
+  end
+
+  # Regression: which colliding page keeps the bare title must not depend on
+  # the order the API returns children in (review id 4242269735 on PR #10).
+  test "collision suffix assignment is independent of sibling order", %{ctx: ctx} do
+    first = %{
+      "id" => "11111111-1111-4111-8111-111111111111",
+      "slugId" => "untitled-x1",
+      "spaceId" => "s1",
+      "title" => "Getting Started Notes",
+      "content" => "one",
+      "parentPageId" => nil
+    }
+
+    second = %{
+      "id" => "22222222-2222-4222-8222-222222222222",
+      "slugId" => "untitled-x2",
+      "spaceId" => "s1",
+      "title" => "Getting Started Notes!",
+      "content" => "two",
+      "parentPageId" => nil
+    }
+
+    DocmostMCP.TestClient.put_pages([first, second])
+    assert {:ok, entries, nil} = Backend.list("/engineering", nil, ctx)
+
+    # Same siblings, API order reversed: identical names, same page per name.
+    DocmostMCP.TestClient.put_pages([second, first])
+    assert {:ok, entries_again, nil} = Backend.list("/engineering", nil, ctx)
+    assert Enum.map(entries_again, & &1.name) == Enum.map(entries, & &1.name)
+
+    assert {:ok, one, _} = Backend.read("/engineering/getting-started-notes.md", ctx)
+    assert one =~ "one"
+
+    assert {:ok, two, _} = Backend.read("/engineering/getting-started-notes-222222.md", ctx)
+    assert two =~ "two"
   end
 
   test "versions are stable until content changes and then increase", %{ctx: ctx} do
@@ -70,6 +146,25 @@ defmodule DocmostMCP.VFSTest do
     assert {:ok, _} = Backend.write("/engineering/start.md", "changed", ctx)
     assert {:ok, changed} = Backend.stat("/engineering/start.md", ctx)
     assert changed.version > first.version
+  end
+
+  # mcp-mount's sync reads /README.md first. The substrate's Features.VFS read
+  # wrapper only falls back to its generated Readme when the backend returns
+  # :enoent — a bare root-level name used to parse into the space namespace
+  # and come back :eisdir, stranding the mounter in a reconnect loop.
+  test "reading /README.md serves the generated substrate readme", %{ctx: ctx} do
+    alias Noizu.MCP.Server.Features.VFS
+
+    assert {:ok, content, version} = VFS.read(Backend, "/README.md", ctx)
+    assert is_binary(content) and content != ""
+    assert content =~ "Docmost spaces and wiki pages"
+    assert is_integer(version)
+
+    assert {:ok, entries, nil} = VFS.list(Backend, "/", nil, ctx)
+    assert Enum.any?(entries, &match?(%{name: "README.md", type: :file}, &1))
+
+    # The live mount path is the composed backend; same contract there.
+    assert {:ok, _, _} = VFS.read(DocmostMCP.VFS.Controlled, "/README.md", ctx)
   end
 
   test "lists spaces and paired page/meta files", %{ctx: ctx} do

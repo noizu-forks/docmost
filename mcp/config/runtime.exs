@@ -14,4 +14,6 @@ config :docmost_mcp,
   start_http:
     System.get_env("DOCMOST_MCP_HTTP", if(config_env() == :test, do: "false", else: "true")) ==
       "true",
-  http_port: String.to_integer(System.get_env("DOCMOST_MCP_HTTP_PORT", "4000"))
+  http_port: String.to_integer(System.get_env("DOCMOST_MCP_HTTP_PORT", "4000")),
+  mount_token: System.get_env("DOCMOST_MCP_MOUNT_TOKEN"),
+  mount_port: String.to_integer(System.get_env("DOCMOST_MCP_MOUNT_PORT", "4700"))

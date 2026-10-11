@@ -46,7 +46,7 @@ Set `config :docmost_mcp, start_stdio: false` when embedding the OTP app.
         └── install.meta
 ```
 
-- Creating, overwriting, or removing a `.md` file maps to the corresponding Docmost page operation. Nested pages are represented by frontmatter (`parent`) while the filesystem also exposes child pages beneath a directory named for their parent; the parent page stays editable through its sibling `.md` file. This keeps identical child slugs under different parents unambiguous.
+- Creating, overwriting, or removing a `.md` file maps to the corresponding Docmost page operation. **Page entries are named for the page title** (kebab-case: "Getting Started Notes" → `getting-started-notes.md`); sibling title collisions get a short-id suffix (`getting-started-notes-222222.md`). Nested pages are represented by frontmatter (`parent`) while the filesystem also exposes child pages beneath a directory named for their parent; the parent page stays editable through its sibling `.md` file. Paths also resolve by slug or page id, so slug-named references keep working across title changes.
 - **`.meta` files are command files, not round-trip documents.** Full read output includes protected identifiers and effective state; writing that output back verbatim is intentionally rejected. Write a minimal YAML command with only mutable keys:
 
   ```yaml
@@ -64,7 +64,38 @@ Set `config :docmost_mcp, start_stdio: false` when embedding the OTP app.
 - Inherited shares/restrictions are reported with a positive `*_level` and cannot be removed at a child page. Permissions are additive unless `permissions_mode: replace` is explicit. Unknown, contradictory, and read-only fields are rejected.
 - Replace mode is the closest Docmost allows to a permission transaction: it validates the complete document and adds new principals before removing old ones, so a mid-request API failure can leave a safe permission superset.
 
+
+## Mounting as a local filesystem
+
+The MCP server can expose its VFS over a localhost WebSocket so `mcp-mount` can project the wiki as a real filesystem. The listener is opt-in and off unless a mount token is configured:
+
+```sh
+DOCMOST_MCP_MOUNT_TOKEN=$(openssl rand -hex 32) DOCMOST_MCP_MOUNT_PORT=4700 mix run --no-halt
+```
+
+Then mount (read-only):
+
+```sh
+mcp-mount --transport vfs-ws --url ws://127.0.0.1:4700/vfs --token "$DOCMOST_MCP_MOUNT_TOKEN" ~/wiki
+```
+
+Or with writes (still gated by the `writes` toggle below):
+
+```sh
+mcp-mount --transport vfs-ws --url ws://127.0.0.1:4700/vfs --token "$DOCMOST_MCP_MOUNT_TOKEN" --write ~/wiki
+```
+
+Caveats:
+
+- The mount token is separate from `DOCMOST_API_KEY` — it authorizes the WebSocket only and carries no Docmost HTTP credentials. Auth is two-layer: a `Bearer` check on the HTTP upgrade (401 before any socket exists) plus a `vfs/auth` handshake frame (failure is `-32001`).
+- The listener binds to `127.0.0.1` only, on its own dedicated port; it is never shared with or forwarded through other transports.
+- External Docmost edits are invisible to a live mount until the client reconnects and re-syncs; restarting the server bumps every VFS version, forcing clients to re-pull.
+- Writes through the mount respect `DOCMOST_MCP_WRITES` and its runtime override: write `true`/`false` to `/etc/dev/config/writes` (visible in the mount at `~/wiki/etc/dev/config/writes`) to flip the gate without restarting.
+- **Creating pages via the mount can still rename the local path** — the file name is the kebab-cased title, so a page created with frontmatter whose `title` differs from the file name materializes under the title's name at the next resync (a bare `notes.md` whose title derives from the file name stays put). Prefer writing into existing pages through the mount; create new pages directly in Docmost or via the `docmost_page_create` tool.
+- `/etc/dev/**` also exposes runtime status, cache stats/flush, and per-tool invocation nodes; treat the mount as an operator surface, not a document dump.
+
 ## Development notes
+
 
 The checkout uses the current sibling `elixir-mcp` library; `NOIZU_MCP_PATH` can override that path outside the monorepo.
 
