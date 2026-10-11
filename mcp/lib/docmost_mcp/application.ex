@@ -23,7 +23,8 @@ defmodule DocmostMCP.Application do
         []
       end
 
-    children = [DocmostMCP.VersionStore | http] ++ [server_child]
+    children =
+      [DocmostMCP.VersionStore | http] ++ [server_child] ++ DocmostMCP.Mount.children()
 
     Supervisor.start_link(children, strategy: :one_for_one, name: DocmostMCP.Supervisor)
   end

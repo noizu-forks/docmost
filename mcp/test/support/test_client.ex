@@ -28,6 +28,9 @@ defmodule DocmostMCP.TestClient do
     do: Agent.update(__MODULE__, &%{&1 | permissions: Map.put(&1.permissions, page, access)})
 
   def put_pages(pages), do: Agent.update(__MODULE__, &%{&1 | pages: pages})
+
+  def put_spaces(spaces), do: Agent.update(__MODULE__, &%{&1 | spaces: spaces})
+
   def calls, do: Agent.get(__MODULE__, &Enum.reverse(&1.calls))
 
   defp seed do
@@ -57,7 +60,12 @@ defmodule DocmostMCP.TestClient do
     do: {:ok, %{"data" => Agent.get(__MODULE__, & &1.spaces), "meta" => %{}}}
 
   def get_space(id), do: fetch(:spaces, id)
-  def create_space(attrs), do: {:ok, Map.put(stringify(attrs), "id", "s-new")}
+
+  def create_space(attrs) do
+    space = Map.put(stringify(attrs), "id", "s-new")
+    Agent.update(__MODULE__, &%{&1 | spaces: &1.spaces ++ [space]})
+    {:ok, space}
+  end
 
   def list_pages(space, _cursor) do
     record({:list_pages, space})
@@ -74,12 +82,14 @@ defmodule DocmostMCP.TestClient do
   def get_page(id), do: fetch(:pages, id)
 
   def create_page(attrs) do
+    attrs = stringify(attrs)
+
     page =
-      attrs
-      |> stringify()
-      |> Map.merge(%{
+      Map.merge(attrs, %{
         "id" => "p-new",
-        "slugId" => "new-page",
+        # Derive the slug from the title so a second create at the same path
+        # collides (eexist), mirroring Docmost's server-side slug assignment.
+        "slugId" => slugify(attrs["title"]),
         "updatedAt" => "2026-01-02T00:00:00Z"
       })
 
@@ -205,6 +215,16 @@ defmodule DocmostMCP.TestClient do
   end
 
   defp stringify(map), do: Map.new(map, fn {k, v} -> {to_string(k), v} end)
+
+  defp slugify(nil), do: "page"
+
+  defp slugify(title) do
+    title
+    |> to_string()
+    |> String.downcase()
+    |> String.replace(~r/[^a-z0-9]+/, "-")
+    |> String.trim("-")
+  end
 
   defp record(call), do: Agent.update(__MODULE__, &%{&1 | calls: [call | &1.calls]})
 end

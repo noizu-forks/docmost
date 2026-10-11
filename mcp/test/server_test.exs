@@ -22,7 +22,7 @@ defmodule DocmostMCP.ServerTest do
     assert Server.__mcp__(:resource_templates) == []
     assert Server.__mcp__(:prompts) == []
     assert Server.__mcp__(:instructions) =~ "share: public"
-    assert Server.__mcp__(:vfs) == [{DocmostMCP.VFS.Backend, []}]
+    assert Server.__mcp__(:vfs) == [{DocmostMCP.VFS.Controlled, []}]
     assert Server.__mcp__(:capabilities) != nil
     assert Server.__mcp__(:opts)[:name] == "docmost"
   end
