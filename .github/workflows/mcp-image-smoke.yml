@@ -18,6 +18,15 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
+      - name: Validate tag format
+        env:
+          TAG: ${{ inputs.tag }}
+        run: |
+          if [[ ! "$TAG" =~ ^sha-[0-9a-f]{7,12}$ ]]; then
+            echo "::error::bad tag '${TAG}' — expected sha-<hex> (7-12 hex chars)"
+            exit 1
+          fi
+
       - name: Login to ops.noizu.com
         uses: docker/login-action@v3
         with:
