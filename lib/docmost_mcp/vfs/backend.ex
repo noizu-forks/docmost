@@ -1,5 +1,12 @@
 defmodule DocmostMCP.VFS.Backend do
-  @moduledoc "Docmost spaces/pages projected as directories, Markdown files, and YAML control metadata."
+  @moduledoc """
+  Docmost spaces/pages projected as directories, Markdown files, and YAML control metadata.
+
+  Page entries are named for the page title (kebab-case, `-<short-id>` suffix
+  on sibling collision) so the mount reads human-friendly; path resolution
+  additionally accepts slug or id segments, so slug-named references keep
+  resolving across the rename.
+  """
   use Noizu.MCP.VFS
 
   alias DocmostMCP.{Client, Config, Normalize}
@@ -302,22 +309,85 @@ defmodule DocmostMCP.VFS.Backend do
          do: {:ok, children(parent), Normalize.id(parent)}
   end
 
-  defp find_in(nodes, ref),
-    do: Enum.find(nodes, &(Normalize.slug(&1) == ref or Normalize.id(&1) == ref))
+  defp find_in(nodes, ref) do
+    case List.keyfind(page_names(nodes), ref, 0) do
+      {_name, page} -> page
+      nil -> Enum.find(nodes, &(Normalize.slug(&1) == ref or Normalize.id(&1) == ref))
+    end
+  end
 
   defp children(page), do: Normalize.list(Normalize.value(page, :children))
 
   defp page_entries(pages) do
-    Enum.flat_map(pages, fn page ->
-      slug = Normalize.slug(page)
-
+    Enum.flat_map(page_names(pages), fn {name, page} ->
       files = [
-        entry(slug <> ".md", :file, version(page)),
-        entry(slug <> ".meta", :file, version(page))
+        entry(name <> ".md", :file, version(page)),
+        entry(name <> ".meta", :file, version(page))
       ]
 
-      if children(page) == [], do: files, else: files ++ [entry(slug, :dir, version(page))]
+      if children(page) == [], do: files, else: files ++ [entry(name, :dir, version(page))]
     end)
+  end
+
+  # Deterministic per-sibling-set file names: kebab-cased title, suffixed with
+  # the page's id on collision. Siblings are sorted by page id before names are
+  # claimed, so which page keeps the bare title never depends on the order the
+  # API happened to return children in.
+  defp page_names(pages) do
+    {pairs, _taken} =
+      pages
+      |> Enum.sort_by(&name_sort_key/1)
+      |> Enum.map_reduce(MapSet.new(), fn page, taken ->
+        name = claim(page, taken)
+        {{name, page}, MapSet.put(taken, name)}
+      end)
+
+    pairs
+  end
+
+  defp name_sort_key(page), do: Normalize.id(page) || ""
+
+  # At most one id suffix per name (no name-id-id chains). The suffix widens
+  # (6 -> 12 chars -> full id) only until the candidate is free, so names stay
+  # bounded; the counter is a deterministic last resort for the pathological
+  # case of a sibling whose own name literally spells `base <> "-" <> full-id`.
+  defp claim(page, taken) do
+    base = title_slug(page)
+
+    candidates = [
+      base,
+      base <> "-" <> id_suffix(page, 6),
+      base <> "-" <> id_suffix(page, 12),
+      base <> "-" <> id_suffix(page, nil)
+    ]
+
+    case Enum.find(candidates, &(not MapSet.member?(taken, &1))) do
+      nil -> base <> "-" <> id_suffix(page, nil) <> "-" <> Integer.to_string(map_size(taken), 36)
+      name -> name
+    end
+  end
+
+  defp id_suffix(page, width) do
+    case Normalize.id(page) do
+      id when is_binary(id) ->
+        compact = String.replace(id, "-", "")
+        if(width, do: String.slice(compact, 0, width), else: compact)
+
+      # Unreachable for API pages (nil ids fail tree hydration); keeps naming
+      # total regardless.
+      _ ->
+        Integer.to_string(:erlang.phash2(page), 36)
+    end
+  end
+
+  defp title_slug(page) do
+    slug = kebab(Normalize.title(page))
+    slug = if(slug == "", do: kebab(to_string(Normalize.slug(page) || "")), else: slug)
+    if(slug == "", do: "untitled", else: String.slice(slug, 0, 96))
+  end
+
+  defp kebab(value) do
+    value |> String.downcase() |> String.replace(~r/[^a-z0-9]+/, "-") |> String.trim("-")
   end
 
   defp all_pages(space) do
@@ -325,8 +395,8 @@ defmodule DocmostMCP.VFS.Backend do
   end
 
   defp flatten_paths(items, prefix) do
-    Enum.flat_map(items, fn item ->
-      refs = prefix ++ [Normalize.slug(item)]
+    Enum.flat_map(page_names(items), fn {name, item} ->
+      refs = prefix ++ [name]
       [{item, refs} | flatten_paths(children(item), refs)]
     end)
   end

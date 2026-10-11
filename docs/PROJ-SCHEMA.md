@@ -20,7 +20,11 @@ Direct tools registered on the MCP server. All inputs are flat objects; outputs 
 
 ## VFS File Formats (`lib/docmost_mcp/vfs/`)
 
-### Page file — `<path>/<slug>.md`
+Page entries are named `<name>.md` / `<name>.meta` where `<name>` is the
+kebab-cased page title (collision between siblings appends a short-id suffix,
+e.g. `notes-222222`); path segments also resolve by page slug or id.
+
+### Page file — `<path>/<name>.md`
 
 YAML frontmatter + Markdown body, produced by `PageFile.encode/1` and parsed by `PageFile.decode/1`:
 
@@ -37,7 +41,7 @@ updated: "<timestamp>" # updatedAt
 
 Frontmatter keys are **read-only** identity metadata; edits to content below the second `---` update the page.
 
-### Meta control file — `<path>/<slug>.meta`
+### Meta control file — `<path>/<name>.meta`
 
 Command-oriented YAML beside each page. Two disjoint key sets (`MetaFile`):
 

@@ -46,7 +46,7 @@ Set `config :docmost_mcp, start_stdio: false` when embedding the OTP app.
         └── install.meta
 ```
 
-- Creating, overwriting, or removing a `.md` file maps to the corresponding Docmost page operation. Nested pages are represented by frontmatter (`parent`) while the filesystem also exposes child pages beneath a directory named for their parent; the parent page stays editable through its sibling `.md` file. This keeps identical child slugs under different parents unambiguous.
+- Creating, overwriting, or removing a `.md` file maps to the corresponding Docmost page operation. **Page entries are named for the page title** (kebab-case: "Getting Started Notes" → `getting-started-notes.md`); sibling title collisions get a short-id suffix (`getting-started-notes-222222.md`). Nested pages are represented by frontmatter (`parent`) while the filesystem also exposes child pages beneath a directory named for their parent; the parent page stays editable through its sibling `.md` file. Paths also resolve by slug or page id, so slug-named references keep working across title changes.
 - **`.meta` files are command files, not round-trip documents.** Full read output includes protected identifiers and effective state; writing that output back verbatim is intentionally rejected. Write a minimal YAML command with only mutable keys:
 
   ```yaml
@@ -91,7 +91,7 @@ Caveats:
 - The listener binds to `127.0.0.1` only, on its own dedicated port; it is never shared with or forwarded through other transports.
 - External Docmost edits are invisible to a live mount until the client reconnects and re-syncs; restarting the server bumps every VFS version, forcing clients to re-pull.
 - Writes through the mount respect `DOCMOST_MCP_WRITES` and its runtime override: write `true`/`false` to `/etc/dev/config/writes` (visible in the mount at `~/wiki/etc/dev/config/writes`) to flip the gate without restarting.
-- **Creating pages via the mount lands under a server-assigned slug** — Docmost assigns its own slug from the title, so a locally created `notes.md` may materialize as `<slug>.md` elsewhere in the space; the create response does not echo the final path and the local path stays stale (or churns `.conflict` files) until the next resync. Prefer writing into existing pages through the mount; create new pages directly in Docmost or via the `docmost_page_create` tool.
+- **Creating pages via the mount can still rename the local path** — the file name is the kebab-cased title, so a page created with frontmatter whose `title` differs from the file name materializes under the title's name at the next resync (a bare `notes.md` whose title derives from the file name stays put). Prefer writing into existing pages through the mount; create new pages directly in Docmost or via the `docmost_page_create` tool.
 - `/etc/dev/**` also exposes runtime status, cache stats/flush, and per-tool invocation nodes; treat the mount as an operator surface, not a document dump.
 
 ## Development notes

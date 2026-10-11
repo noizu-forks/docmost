@@ -11,7 +11,8 @@ defmodule Noizu.MCP.VFS.Conformance do
 
     * the standard conformance tree lives under the seeded space `/cf` — the
       remote root only ever holds space directories;
-    * files are `<slug>.md` with sibling `<slug>.meta` entries in listings;
+    * files are `<name>.md` (kebab-cased title) with sibling `<name>.meta`
+      entries in listings;
     * page content travels in a front-matter envelope, so write/read content
       assertions match on substrings and size matches the encoded body;
     * `/` and container dirs are projections, not deletable containers —
