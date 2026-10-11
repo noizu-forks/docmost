@@ -1,0 +1,36 @@
+name: MCP Image Smoke
+
+# The mcp/ image is built and pushed manually from arm64 (the BEAM segfaults
+# under amd64->arm64 emulation, so GH amd64 runners cannot build it). This
+# workflow is the post-push guard: pull the pushed tag from ops.noizu.com and
+# boot it on linux/amd64.
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Image tag to smoke (sha-<forksha>)'
+        required: true
+        type: string
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Login to ops.noizu.com
+        uses: docker/login-action@v3
+        with:
+          registry: ops.noizu.com
+          username: ${{ secrets.OPS_REGISTRY_USERNAME }}
+          password: ${{ secrets.OPS_REGISTRY_PASSWORD }}
+
+      - name: Pull pushed image
+        env:
+          IMAGE: ops.noizu.com/docmost.noizu.com/mcp:${{ inputs.tag }}
+        run: docker pull --platform linux/amd64 "$IMAGE"
+
+      - name: Boot smoke (elixir --version)
+        env:
+          IMAGE: ops.noizu.com/docmost.noizu.com/mcp:${{ inputs.tag }}
+        run: docker run --rm --platform linux/amd64 "$IMAGE" elixir --version
