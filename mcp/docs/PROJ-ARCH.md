@@ -71,4 +71,4 @@ graph TB
 
 ## Technology Stack
 
-Elixir 1.18 (OTP 28) · `noizu_mcp` (sibling `elixir-mcp`) · Req (HTTP) · Bandit + Plug (WebSocket) · Jason · yaml_elixir · CI via GitHub Actions (format check, `--warnings-as-errors`, `mix test`, coverage threshold 85%).
+Elixir 1.18 (OTP 28) · `noizu_mcp` (sibling `elixir-mcp`) · Req (HTTP) · Bandit + Plug (WebSocket) · Jason · yaml_elixir · CI via GitHub Actions (format check, `--warnings-as-errors`, `mix test`, coverage threshold 90% (mix.exs test_coverage, enforced via `mix test --cover`)).
