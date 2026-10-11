@@ -70,6 +70,9 @@ const WorkspaceApiKeys = lazy(
   () => import("@/ee/api-key/pages/workspace-api-keys"),
 );
 const AiSettings = lazy(() => import("@/ee/ai/pages/ai-settings.tsx"));
+const McpVfsSettings = lazy(
+  () => import("@/components/settings/pages/mcp-vfs-settings.tsx"),
+);
 const BasePage = lazy(() => import("@/ee/base/pages/base-page.tsx"));
 const AuditLogs = lazy(() => import("@/ee/audit/pages/audit-logs.tsx"));
 const VerifiedPages = lazy(
@@ -183,6 +186,7 @@ export default function App() {
             <Route path={"security"} element={<Security />} />
             <Route path={"ai"} element={<AiSettings />} />
             <Route path={"ai/mcp"} element={<AiSettings />} />
+            <Route path={"mcp-vfs"} element={<McpVfsSettings />} />
             <Route path={"audit"} element={<AuditLogs />} />
             <Route path={"audit/siem"} element={<AuditLogs />} />
             <Route
