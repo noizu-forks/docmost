@@ -54,6 +54,8 @@ COPY --from=build /app/_build/prod/rel/docmost_mcp ./
 # the boot script finds kernel/stdlib/crypto/etc. — versions match exactly
 # because the build stage uses the same base tag.
 RUN for d in /usr/local/lib/erlang/lib/*; do n=$(basename "$d"); [ -e "lib/$n" ] || ln -s "$d" "lib/$n"; done
+# Self-smoke: ERTS boot failure (load_failed / version-skew path mismatch) becomes a BUILD failure.
+RUN elixir --version
 
 # Streamable HTTP edge (session-identity auth via DOCMOST_APP_SECRET);
 # stdio is for local CLI use and is off in the container.
