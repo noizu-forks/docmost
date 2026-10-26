@@ -1,3 +1,4 @@
+# 〚📁:1634106b-f137-5a92-9334-40b16aca3ed0〛 Docmost fork README :: Overview, features, AGPL/EE license split
 <div align="center">
     <h1><b>Docmost</b></h1>
     <p>

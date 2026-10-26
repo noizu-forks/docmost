@@ -1,3 +1,4 @@
+// 〚📁:e85d23c9-b95f-552d-8544-20d43a55ae79〛 Server bootstrap :: NestJS + Fastify bootstrap, global prefix, hooks, CSP/frame headers
 import { NestFactory, Reflector } from '@nestjs/core';
 import { AppModule } from './app.module';
 import {

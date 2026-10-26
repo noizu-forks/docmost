@@ -1,3 +1,4 @@
+// 〚📁:a610ffc1-5dba-58dc-840d-6badb086fb36〛 Client entry :: React/Vite client bootstrap
 import "@mantine/core/styles.css";
 import "@mantine/spotlight/styles.css";
 import "@mantine/notifications/styles.css";

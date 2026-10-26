@@ -1,3 +1,4 @@
+# 〚📁:86f0753e-c639-5cb0-b1da-6e2c13370333〛 Fork integration notes :: What this fork adds over upstream (mcp/ subtree, compose override)
 # FORK.md — noizu-forks/docmost fork integration notes
 
 This fork of docmost/docmost carries in-tree integrations on top of upstream.

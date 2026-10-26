@@ -1,0 +1,122 @@
+---
+pointers:
+  134688a7-7d7e-5402-86d8-eeeee373692f:
+    created_at: 2026-10-26T23:23:11.977781Z
+    description: Kysely migrator CLI (up/down/latest/redo) over migrations/
+    file_path: apps/server/src/database/migrate.ts
+    function: Migration runner
+    kind: file
+    line: 1
+    locations:
+      - file_path: apps/server/src/database/migrate.ts
+        line: 1
+    token: 𔉠𓪏𓋕𓃟
+    updated_at: 2026-10-26T23:23:11.977781Z
+  1634106b-f137-5a92-9334-40b16aca3ed0:
+    created_at: 2026-10-26T23:23:11.977756Z
+    description: Overview, features, AGPL/EE license split
+    file_path: README.md
+    function: Docmost fork README
+    kind: file
+    line: 1
+    locations:
+      - file_path: README.md
+        line: 1
+    token: 𓐋𓬗𓅑𓁀
+    updated_at: 2026-10-26T23:23:11.977756Z
+  2bfa56cf-1e18-5c5a-b4e2-7c3759e28c1f:
+    created_at: 2026-10-26T23:23:11.977766Z
+    description: Workspace packages + patched dependencies
+    file_path: pnpm-workspace.yaml
+    function: pnpm workspace config
+    kind: file
+    line: 1
+    locations:
+      - file_path: pnpm-workspace.yaml
+        line: 1
+    token: 𓡰𔌒𔉝𓩿
+    updated_at: 2026-10-26T23:23:11.977766Z
+  5074b5b2-2404-5d3b-b184-7ec1f0fa3774:
+    created_at: 2026-10-26T23:23:11.977786Z
+    description: NestJS root module wiring all server feature modules
+    file_path: apps/server/src/app.module.ts
+    function: AppModule
+    kind: module
+    line: 1
+    locations:
+      - file_path: apps/server/src/app.module.ts
+        line: 1
+    token: 𔙰𔅜𔙠𓢄
+    updated_at: 2026-10-26T23:23:11.977786Z
+  69c91445-af14-50dc-a1c7-65625f9e5ab4:
+    created_at: 2026-10-26T23:23:11.977763Z
+    description: Caddy edge + mcp service overlaid on upstream docker-compose.yml
+    file_path: docker-compose.mcp.yml
+    function: MCP compose override
+    kind: file
+    line: 1
+    locations:
+      - file_path: docker-compose.mcp.yml
+        line: 1
+    token: 𓞹𔓘𓹶𔈤
+    updated_at: 2026-10-26T23:23:11.977763Z
+  6c3f8060-d6d6-5489-9b0e-46443bfaa863:
+    created_at: 2026-10-26T23:23:11.977760Z
+    description: Login/logout/signup/setup HTTP endpoints
+    file_path: apps/server/src/core/auth/auth.controller.ts
+    function: Auth controller
+    kind: file
+    line: 1
+    locations:
+      - file_path: apps/server/src/core/auth/auth.controller.ts
+        line: 1
+    token: 𓒉𓪐𓝭𓆓
+    updated_at: 2026-10-26T23:23:11.977760Z
+  86f0753e-c639-5cb0-b1da-6e2c13370333:
+    created_at: 2026-10-26T23:23:11.977729Z
+    description: What this fork adds over upstream (mcp/ subtree, compose override)
+    file_path: FORK.md
+    function: Fork integration notes
+    kind: file
+    line: 1
+    locations:
+      - file_path: FORK.md
+        line: 1
+    token: 𓋙𓁀𓊔𓲃
+    updated_at: 2026-10-26T23:23:11.977729Z
+  a610ffc1-5dba-58dc-840d-6badb086fb36:
+    created_at: 2026-10-26T23:23:11.977773Z
+    description: React/Vite client bootstrap
+    file_path: apps/client/src/main.tsx
+    function: Client entry
+    kind: file
+    line: 1
+    locations:
+      - file_path: apps/client/src/main.tsx
+        line: 1
+    token: 𓴋𓍾𓜪𔗦
+    updated_at: 2026-10-26T23:23:11.977773Z
+  b6811e72-57a6-5188-8bd8-362c4505933a:
+    created_at: 2026-10-26T23:23:11.977770Z
+    description: Hocuspocus/Yjs real-time collaboration websocket gateway
+    file_path: apps/server/src/collaboration/collaboration.gateway.ts
+    function: Collaboration gateway
+    kind: file
+    line: 1
+    locations:
+      - file_path: apps/server/src/collaboration/collaboration.gateway.ts
+        line: 1
+    token: 𓦰𓄯𓈋𓽺
+    updated_at: 2026-10-26T23:23:11.977770Z
+  e85d23c9-b95f-552d-8544-20d43a55ae79:
+    created_at: 2026-10-26T23:23:11.977752Z
+    description: NestJS + Fastify bootstrap, global prefix, hooks, CSP/frame headers
+    file_path: apps/server/src/main.ts
+    function: Server bootstrap
+    kind: file
+    line: 1
+    locations:
+      - file_path: apps/server/src/main.ts
+        line: 1
+    token: 𓌴𓍃𔍪𓠩
+    updated_at: 2026-10-26T23:23:11.977752Z
