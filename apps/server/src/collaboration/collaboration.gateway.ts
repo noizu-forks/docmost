@@ -1,3 +1,4 @@
+// 〚📁:b6811e72-57a6-5188-8bd8-362c4505933a〛 Collaboration gateway :: Hocuspocus/Yjs real-time collaboration websocket gateway
 import { Hocuspocus } from '@hocuspocus/server';
 import { IncomingMessage } from 'http';
 import WebSocket from 'ws';

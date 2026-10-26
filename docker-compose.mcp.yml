@@ -1,3 +1,4 @@
+# 〚📁:69c91445-af14-50dc-a1c7-65625f9e5ab4〛 MCP compose override :: Caddy edge + mcp service overlaid on upstream docker-compose.yml
 # MCP service override — do NOT edit docker-compose.yml (upstream file).
 #
 #   docker compose -f docker-compose.yml -f docker-compose.mcp.yml up

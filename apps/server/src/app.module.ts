@@ -1,3 +1,4 @@
+// 〚📦:5074b5b2-2404-5d3b-b184-7ec1f0fa3774〛 AppModule :: NestJS root module wiring all server feature modules
 import { Module } from '@nestjs/common';
 import { APP_INTERCEPTOR } from '@nestjs/core';
 import { AppController } from './app.controller';

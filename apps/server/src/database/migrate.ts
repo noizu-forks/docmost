@@ -1,3 +1,4 @@
+// 〚📁:134688a7-7d7e-5402-86d8-eeeee373692f〛 Migration runner :: Kysely migrator CLI (up/down/latest/redo) over migrations/
 import * as path from 'path';
 import { promises as fs } from 'fs';
 import { Kysely, Migrator, FileMigrationProvider } from 'kysely';

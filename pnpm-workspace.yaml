@@ -1,3 +1,4 @@
+# 〚📁:2bfa56cf-1e18-5c5a-b4e2-7c3759e28c1f〛 pnpm workspace config :: Workspace packages + patched dependencies
 packages:
   - 'apps/*'
   - 'packages/*'
