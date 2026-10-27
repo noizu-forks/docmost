@@ -1,5 +1,8 @@
 # Changelog
 
+## 2026-10-28
+- docs: add AGENT-README.md (agent orientation)
+
 ## 2026-10-26
 
 - docs: add doc-pointers seed store (`.meta/pointers.yaml`, 10 anchors) (#9)
